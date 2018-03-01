@@ -4,6 +4,9 @@
 #include "public.sdk/source/vst2.x/audioeffectx.h"
 
 
+#define NUM_PARAMS 16
+
+
 struct Bridge {
 	int channel = 0;
 	void setChannel(int _channel) {
@@ -17,7 +20,7 @@ struct Bridge {
 
 class Gain : public AudioEffectX {
 public:
-	Gain(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 0, 1) {
+	Gain(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 0, 1 + NUM_PARAMS) {
 		setNumInputs(2);
 		setNumOutputs(2);
 		setUniqueID('VCVB');
@@ -30,20 +33,20 @@ public:
 		for (int i = 0; i < sampleFrames; i++) {
 			float r = (float) rand() / RAND_MAX;
 			r = 2.0 * r - 1.0;
-			outputs[0][i] = r; //inputs[0][i];
-			outputs[1][i] = r; //inputs[1][i];
+			outputs[0][i] = r * 0.5; //inputs[0][i];
+			outputs[1][i] = r * 0.25; //inputs[1][i];
 		}
 	}
 
 	void setParameter(VstInt32 index, float value) override {
 		if (index == 0) {
-			bridge.setChannel((int) roundf(value * 63.0));
+			bridge.setChannel((int) roundf(value * 15.0));
 		}
 	}
 
 	float getParameter(VstInt32 index) override {
 		if (index == 0) {
-			return bridge.getChannel() / 63.0;
+			return bridge.getChannel() / 15.0;
 		}
 		return 0.0;
 	}
@@ -52,17 +55,26 @@ public:
 		if (index == 0) {
 			snprintf(label, kVstMaxParamStrLen, "");
 		}
+		if (index > 0) {
+			snprintf(label, kVstMaxParamStrLen, "");
+		}
 	}
 
 	void getParameterDisplay(VstInt32 index, char *text) override {
 		if (index == 0) {
 			snprintf(text, kVstMaxParamStrLen, "%d", bridge.getChannel());
 		}
+		if (index > 0) {
+			snprintf(text, kVstMaxParamStrLen, "%f", 0.0);
+		}
 	}
 
 	void getParameterName(VstInt32 index, char *text) override {
 		if (index == 0) {
 			snprintf(text, kVstMaxParamStrLen, "Channel");
+		}
+		if (index > 0) {
+			snprintf(text, kVstMaxParamStrLen, "#%d", index);
 		}
 	}
 
@@ -77,7 +89,7 @@ public:
 	}
 
 	bool getProductString(char* text) override {
-		snprintf(text, kVstMaxVendorStrLen, "ProductString");
+		snprintf(text, kVstMaxVendorStrLen, "VCV Bridge");
 		return true;
 	}
 

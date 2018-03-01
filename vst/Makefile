@@ -1,0 +1,63 @@
+VERSION = 0.6.0dev
+
+RACK_DIR ?= ../..
+include $(RACK_DIR)/arch.mk
+
+VST2_SDK = VST2_SDK
+
+FLAGS += -fPIC
+FLAGS += -I$(VST2_SDK)
+
+ifeq ($(ARCH), mac)
+	FLAGS += -arch i386 -arch x86_64
+	LDFLAGS += -bundle
+	TARGET = VCV-Bridge
+	BUNDLE = VCV-Bridge.vst
+endif
+ifeq ($(ARCH), win)
+	LDFLAGS += -shared
+	TARGET = VCV-Bridge.dll
+endif
+ifeq ($(ARCH), lin)
+$(error Linux not supported yet, although it wouldn't take much effort to add.)
+endif
+
+SOURCES += vstplugin.cpp
+SOURCES += $(VST2_SDK)/public.sdk/source/vst2.x/audioeffect.cpp
+SOURCES += $(VST2_SDK)/public.sdk/source/vst2.x/audioeffectx.cpp
+SOURCES += $(VST2_SDK)/public.sdk/source/vst2.x/vstplugmain.cpp
+
+
+all: $(TARGET)
+
+include $(RACK_DIR)/compile.mk
+
+clean:
+	rm -rfv build $(TARGET) dist
+
+dist: all
+	rm -rf dist
+ifeq ($(ARCH), mac)
+	mkdir -p dist
+	mkdir -p dist/$(BUNDLE)/Contents
+	mkdir -p dist/$(BUNDLE)/Contents/MacOS
+	cp Info.plist dist/$(BUNDLE)/Contents/
+	cp PkgInfo dist/$(BUNDLE)/Contents/
+	cp $(TARGET) dist/$(BUNDLE)/Contents/MacOS/
+	cd dist && zip -5 -r VCV-Bridge-$(VERSION)-$(ARCH)-vst.zip $(BUNDLE)
+endif
+ifeq ($(ARCH), win)
+	mkdir -p dist
+	cp $(TARGET) dist/
+	cd dist && zip -5 -r VCV-Bridge-$(VERSION)-$(ARCH)-vst.zip $(TARGET)
+endif
+
+install: dist
+ifeq ($(ARCH), mac)
+	sudo cp -R dist/$(BUNDLE) /Library/Audio/Plug-Ins/VST/
+endif
+
+uninstall:
+ifeq ($(ARCH), mac)
+	sudo rm -rfv /Library/Audio/Plug-Ins/VST/$(BUNDLE)
+endif

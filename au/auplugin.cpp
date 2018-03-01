@@ -44,7 +44,7 @@ public:
 		if (inScope == kAudioUnitScope_Global) {
 			if (inParameterID == 0) {
 				CFStringRef	strings [] = {
-					CFSTR("0"), CFSTR("1"), CFSTR("2"), CFSTR("3"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"),
+					CFSTR("0"), CFSTR("1"), CFSTR("2"), CFSTR("3"), CFSTR("4"), CFSTR("5"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"), CFSTR("0"),
 				};
 
 				*outStrings = CFArrayCreate(NULL, (const void**) strings, 64, NULL);
@@ -62,8 +62,8 @@ public:
 				case 0:
 					AUBase::FillInParameterName(outParameterInfo, CFSTR("Channel"), false);
 					outParameterInfo.unit = kAudioUnitParameterUnit_Indexed;
-					outParameterInfo.minValue = 0.0;
-					outParameterInfo.maxValue = 63.0;
+					outParameterInfo.minValue = 1.0;
+					outParameterInfo.maxValue = 16.0;
 					outParameterInfo.defaultValue = 0.0;
 					return noErr;
 				default:
