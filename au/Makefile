@@ -3,6 +3,10 @@ VERSION = 0.6.0dev
 RACK_DIR ?= ../..
 include $(RACK_DIR)/arch.mk
 
+ifneq ($(ARCH), mac)
+$(error The AU plugin is only available for MacOS)
+endif
+
 AU_SDK = AudioUnitExamplesAudioUnitEffectGeneratorInstrumentMIDIProcessorandOffline
 
 FLAGS += -fPIC

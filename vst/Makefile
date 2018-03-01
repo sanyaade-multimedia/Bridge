@@ -19,7 +19,7 @@ ifeq ($(ARCH), win)
 	TARGET = VCV-Bridge.dll
 endif
 ifeq ($(ARCH), lin)
-$(error Linux not supported yet, although it wouldn't take much effort to add.)
+$(error The VST plugin is not available for Linux at this time. If you've built Linux VSTs before, you're welcome to contribute to the build system)
 endif
 
 SOURCES += vstplugin.cpp

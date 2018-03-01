@@ -1,0 +1,22 @@
+#pragma once
+
+#include "util/common.hpp"
+
+
+namespace rack {
+
+
+enum BridgeCommand {
+	NO_COMMAND = 0,
+	START_COMMAND,
+	QUIT_COMMAND,
+	CHANNEL_SET_COMMAND,
+	AUDIO_SAMPLE_RATE_SET_COMMAND,
+	AUDIO_CHANNELS_SET_COMMAND,
+	AUDIO_BUFFER_SEND_COMMAND,
+	MIDI_MESSAGE_SEND_COMMAND,
+	NUM_COMMANDS
+};
+
+
+} // namespace rack
