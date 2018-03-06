@@ -27,6 +27,16 @@ struct BridgeClientConnection {
 	int audioChannels = 0;
 	bool audioBufferReceiving = false;
 	int audioBufferRemaining = 0;
+	FILE *audioOutputFile;
+
+	BridgeClientConnection() {
+		audioOutputFile = fopen("out.f32", "w");
+		assert(audioOutputFile);
+	}
+
+	~BridgeClientConnection() {
+		fclose(audioOutputFile);
+	}
 
 	std::string getIp() {
 		int err;
@@ -120,7 +130,6 @@ struct BridgeClientConnection {
 					if (queue.size() >= 4) {
 						audioBufferRemaining = shift<uint32_t>();
 						audioBufferReceiving = true;
-						printf("Receiving %d audio samples\n", audioBufferRemaining);
 						return true;
 					}
 				}
@@ -130,7 +139,8 @@ struct BridgeClientConnection {
 						available = min(available, audioBufferRemaining);
 						float *audioBuffer = (float*) queue.startData();
 						// TODO Do something with the data
-						(void) audioBuffer;
+						fwrite(audioBuffer, sizeof(float), available, audioOutputFile);
+						printf(".");
 						queue.startIncr(available * sizeof(float));
 						audioBufferRemaining -= available;
 					}
@@ -138,7 +148,6 @@ struct BridgeClientConnection {
 					if (audioBufferRemaining <= 0) {
 						audioBufferReceiving = false;
 						currentCommand = NO_COMMAND;
-						printf("Received audio samples\n");
 						return true;
 					}
 				}

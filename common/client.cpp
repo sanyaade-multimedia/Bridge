@@ -19,6 +19,8 @@ struct BridgeClient {
 	int server = -1;
 	bool closeRequested = false;
 	RingBuffer<uint8_t, (1<<15)> sendQueue;
+	std::mutex bridgeMutex;
+	std::condition_variable bridgeCv;
 
 	/** Starts the Bridge Client Thread */
 	void connect() {
@@ -47,8 +49,6 @@ struct BridgeClient {
 		size_t sendLength = sendQueue.size();
 		if (sendLength == 0)
 			return;
-		printf("%d\n", sendLength);
-		return;
 
 		uint8_t sendBuffer[sendLength];
 		sendQueue.shiftBuffer(sendBuffer, sendLength);
@@ -74,21 +74,31 @@ struct BridgeClient {
 
 	void run() {
 		while (!closeRequested) {
+			// Wait before connecting or reconnecting
 			std::this_thread::sleep_for(std::chrono::duration<double>(0.5));
 			connect();
-			printf("connected\n");
+			// Flush buffer in a loop
 			while (!closeRequested) {
-				std::this_thread::sleep_for(std::chrono::duration<double>(10e-6));
-				flush();
+				std::unique_lock<std::mutex> lock(bridgeMutex);
+				auto timeout = std::chrono::duration<double>(10e-3);
+				auto cond = [&] {
+					return !sendQueue.empty();
+				};
+				if (bridgeCv.wait_for(lock, timeout, cond)) {
+					flush();
+				}
+				else {
+					// Do nothing if timed out, just loop around again
+				}
 			}
 			disconnect();
-			printf("disconnected\n");
 		}
 	}
 
 	void push(const uint8_t *buffer, int length) {
 		if (sendQueue.capacity() >= (size_t) length) {
 			sendQueue.pushBuffer(buffer, length);
+			bridgeCv.notify_one();
 		}
 	}
 
@@ -107,6 +117,7 @@ struct BridgeClient {
 struct Bridge {
 	BridgeClient client;
 	int channel = -1;
+	int sampleRate = -1;
 	float params[NUM_PARAMS] = {};
 	std::thread bridgeThread;
 
@@ -127,10 +138,15 @@ struct Bridge {
 		if (channel != this->channel) {
 			client.push<uint8_t>(CHANNEL_SET_COMMAND);
 			client.push<uint8_t>(channel);
-			// client.push<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
-			// client.push<uint32_t>(44100);
+			setSampleRate(sampleRate);
 		}
 		this->channel = channel;
+	}
+
+	void setSampleRate(int sampleRate) {
+		client.push<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
+		client.push<uint32_t>(sampleRate);
+		this->sampleRate = sampleRate;
 	}
 
 	int getChannel() {

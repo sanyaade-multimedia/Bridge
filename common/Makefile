@@ -2,7 +2,7 @@
 RACK_DIR ?= ../..
 
 CXXFLAGS = -I$(RACK_DIR)/include
-# LDFLAGS = -pthread
+LDFLAGS = -pthread
 
 all: server client_test
 
