@@ -12,6 +12,7 @@ AU_SDK = AudioUnitExamplesAudioUnitEffectGeneratorInstrumentMIDIProcessorandOffl
 FLAGS += -fPIC
 FLAGS += -arch i386 -arch x86_64
 
+FLAGS += -I$(RACK_DIR)/include
 FLAGS += -I$(AU_SDK)/AUPublic/AUBase -I$(AU_SDK)/AUPublic/OtherBases -I$(AU_SDK)/AUPublic/Utility -I$(AU_SDK)/PublicUtility
 LDFLAGS += -framework CoreServices -framework AudioUnit -framework AudioToolbox
 LDFLAGS += -bundle

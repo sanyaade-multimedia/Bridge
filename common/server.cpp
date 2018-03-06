@@ -120,6 +120,7 @@ struct BridgeClientConnection {
 					if (queue.size() >= 4) {
 						audioBufferRemaining = shift<uint32_t>();
 						audioBufferReceiving = true;
+						printf("Receiving %d audio samples\n", audioBufferRemaining);
 						return true;
 					}
 				}
@@ -128,7 +129,8 @@ struct BridgeClientConnection {
 					if (available > 0) {
 						available = min(available, audioBufferRemaining);
 						float *audioBuffer = (float*) queue.startData();
-						// printf("Received %d audio samples\n", available);
+						// TODO Do something with the data
+						(void) audioBuffer;
 						queue.startIncr(available * sizeof(float));
 						audioBufferRemaining -= available;
 					}
@@ -136,6 +138,7 @@ struct BridgeClientConnection {
 					if (audioBufferRemaining <= 0) {
 						audioBufferReceiving = false;
 						currentCommand = NO_COMMAND;
+						printf("Received audio samples\n");
 						return true;
 					}
 				}
@@ -155,17 +158,22 @@ struct BridgeClientConnection {
 
 		while (1) {
 			char buffer[RECV_BUFFER_SIZE];
+#ifdef ARCH_MAC
+			ssize_t received = recv(client, buffer, sizeof(buffer), 0);
+#else
 			ssize_t received = recv(client, buffer, sizeof(buffer), MSG_NOSIGNAL);
+#endif
 			if (received <= 0)
 				return;
 
 			// Make sure we can fill the buffer before filling it
-			assert(queue.capacity() >= received);
+			assert((ssize_t) queue.capacity() >= received);
 
 			uint8_t *queueBuffer = queue.endData(received);
 			memcpy(queueBuffer, buffer, received);
 			queue.endIncr(received);
 
+			// Loop the state machine until it returns false
 			while (step()) {}
 
 			if (closeRequested)

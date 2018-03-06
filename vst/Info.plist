@@ -5,9 +5,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>English</string>
 	<key>CFBundleExecutable</key>
-	<string>VCVBridge</string>
+	<string>VCV-Bridge</string>
 	<key>CFBundleName</key>
-	<string>VCVBridge</string>
+	<string>VCV-Bridge</string>
 	<key>CFBundleIconFile</key>
 	<string></string>
 	<key>CFBundleIdentifier</key>

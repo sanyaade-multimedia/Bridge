@@ -6,7 +6,7 @@ include $(RACK_DIR)/arch.mk
 VST2_SDK = VST2_SDK
 
 FLAGS += -fPIC
-FLAGS += -I$(VST2_SDK)
+FLAGS += -I$(VST2_SDK) -I$(RACK_DIR)/include
 
 ifeq ($(ARCH), mac)
 	FLAGS += -arch i386 -arch x86_64

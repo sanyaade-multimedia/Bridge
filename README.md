@@ -3,7 +3,7 @@
 
 ## Building
 
-Clone this repository in the root directory of the [Rack](https://github.com/VCVRack/Rack) repository.
+Clone this repository in the root directory of the [Rack](https://github.com/VCVRack/Rack) repository. Or, clone this repository anywhere and set the `RACK_DIR` environment variable.
 
 For the VST plugin, obtain `VST2_SDK` from Steinberg, and place it in the `vst` directory.
 
