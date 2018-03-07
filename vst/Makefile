@@ -10,6 +10,7 @@ FLAGS += -I$(VST2_SDK) -I$(RACK_DIR)/include
 
 ifeq ($(ARCH), mac)
 	FLAGS += -arch i386 -arch x86_64
+	LDFLAGS += -arch i386 -arch x86_64
 	LDFLAGS += -bundle
 	TARGET = VCV-Bridge
 	BUNDLE = VCV-Bridge.vst

@@ -25,8 +25,9 @@ struct BridgeClientConnection {
 	int channel = -1;
 	int sampleRate = -1;
 	int audioChannels = 0;
-	bool audioBufferReceiving = false;
-	int audioBufferRemaining = 0;
+	bool bufferReceiving = false;
+	int bufferRemaining = 0;
+	// TEMP
 	FILE *audioOutputFile;
 
 	BridgeClientConnection() {
@@ -126,30 +127,39 @@ struct BridgeClientConnection {
 			} break;
 
 			case AUDIO_BUFFER_SEND_COMMAND: {
-				if (!audioBufferReceiving) {
+				if (!bufferReceiving) {
 					if (queue.size() >= 4) {
-						audioBufferRemaining = shift<uint32_t>();
-						audioBufferReceiving = true;
+						bufferRemaining = shift<uint32_t>();
+						bufferReceiving = true;
 						return true;
 					}
 				}
 				else {
 					int available = queue.size() / sizeof(float);
 					if (available > 0) {
-						available = min(available, audioBufferRemaining);
+						available = min(available, bufferRemaining);
 						float *audioBuffer = (float*) queue.startData();
 						// TODO Do something with the data
 						fwrite(audioBuffer, sizeof(float), available, audioOutputFile);
-						printf(".");
 						queue.startIncr(available * sizeof(float));
-						audioBufferRemaining -= available;
+						bufferRemaining -= available;
 					}
 
-					if (audioBufferRemaining <= 0) {
-						audioBufferReceiving = false;
+					if (bufferRemaining <= 0) {
+						bufferReceiving = false;
 						currentCommand = NO_COMMAND;
 						return true;
 					}
+				}
+			} break;
+
+			case MIDI_MESSAGE_SEND_COMMAND: {
+				if (queue.size() >= 3) {
+					uint8_t *midiBuffer = (uint8_t*) queue.startData();
+					printf("MIDI: %02x %02x %02x\n", midiBuffer[0], midiBuffer[1], midiBuffer[2]);
+					queue.startIncr(3);
+					currentCommand = NO_COMMAND;
+					return true;
 				}
 			} break;
 
@@ -173,7 +183,7 @@ struct BridgeClientConnection {
 			ssize_t received = recv(client, buffer, sizeof(buffer), MSG_NOSIGNAL);
 #endif
 			if (received <= 0)
-				return;
+				break;
 
 			// Make sure we can fill the buffer before filling it
 			assert((ssize_t) queue.capacity() >= received);
@@ -186,12 +196,14 @@ struct BridgeClientConnection {
 			while (step()) {}
 
 			if (closeRequested)
-				return;
+				break;
 
 			// ssize_t written = send(client, buffer, received, MSG_NOSIGNAL);
 			// if (written <= 0)
 			// 	break;
 		}
+
+		printf("disconnected\n");
 	}
 };
 
@@ -214,7 +226,8 @@ void doServer() {
 
 	// Open socket
 	int server = socket(AF_INET, SOCK_STREAM, 0);
-	assert(server >= 0);
+	if (server < 0)
+		return;
 
 	// Bind to 127.0.0.1 on port 5000
 	struct sockaddr_in serverAddr;
@@ -223,11 +236,13 @@ void doServer() {
 	inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);
 	serverAddr.sin_port = htons(5000);
 	err = bind(server, (struct sockaddr*) &serverAddr, sizeof(serverAddr));
-	assert(!err);
+	if (err)
+		goto cleanup;
 
 	// Listen for clients
 	err = listen(server, 20);
-	assert(!err);
+	if (err)
+		goto cleanup;
 	printf("Server started\n");
 
 	while (1) {
@@ -241,10 +256,14 @@ void doServer() {
 	}
 
 	// Cleanup
+cleanup:
 	err = close(server);
 }
 
 
 int main(int argc, char *argv[]) {
-	doServer();
+	while (1) {
+		doServer();
+		std::this_thread::sleep_for(std::chrono::duration<double>(0.5));	
+	}
 }

@@ -10,7 +10,7 @@
 
 class BridgeEffect : public AudioEffectX {
 private:
-	Bridge bridge;
+	BridgeClient *client;
 
 public:
 	BridgeEffect(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 0, 1 + NUM_PARAMS) {
@@ -18,9 +18,12 @@ public:
 		setNumOutputs(2);
 		setUniqueID('VCVB');
 		canProcessReplacing();
+		client = new BridgeClient();
 	}
 
-	~BridgeEffect() {}
+	~BridgeEffect() {
+		delete client;
+	}
 
 	void processReplacing(float **inputs, float **outputs, VstInt32 sampleFrames) override {
 		// Interleave samples
@@ -30,7 +33,7 @@ public:
 			input[2*i + 0] = inputs[0][i];
 			input[2*i + 1] = inputs[1][i];
 		}
-		bridge.processAudio(input, output, sampleFrames);
+		client->processAudio(input, output, sampleFrames);
 		for (int i = 0; i < sampleFrames; i++) {
 			outputs[0][i] = output[2*i + 0];
 			outputs[1][i] = output[2*i + 1];
@@ -39,19 +42,19 @@ public:
 
 	void setParameter(VstInt32 index, float value) override {
 		if (index == 0) {
-			bridge.setChannel((int) roundf(value * 15.0));
+			client->setChannel((int) roundf(value * 15.0));
 		}
 		else if (index > 0) {
-			bridge.setParam(index - 1, value);
+			client->setParam(index - 1, value);
 		}
 	}
 
 	float getParameter(VstInt32 index) override {
 		if (index == 0) {
-			return bridge.getChannel() / 15.0;
+			return client->getChannel() / 15.0;
 		}
 		else if (index > 0) {
-			return bridge.getParam(index - 1);
+			return client->getParam(index - 1);
 		}
 		return 0.f;
 	}
@@ -67,10 +70,10 @@ public:
 
 	void getParameterDisplay(VstInt32 index, char *text) override {
 		if (index == 0) {
-			snprintf(text, kVstMaxParamStrLen, "%d", bridge.getChannel() + 1);
+			snprintf(text, kVstMaxParamStrLen, "%d", client->getChannel() + 1);
 		}
 		else if (index > 0) {
-			snprintf(text, kVstMaxParamStrLen, "%0.3f V", 10.f * bridge.getParam(index - 1));
+			snprintf(text, kVstMaxParamStrLen, "%0.2f V", 10.f * client->getParam(index - 1));
 		}
 	}
 

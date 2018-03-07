@@ -16,19 +16,44 @@ using namespace rack;
 
 
 struct BridgeClient {
-	int server = -1;
-	bool closeRequested = false;
+	int channel = 0;
+	int sampleRate = 44100;
+	float params[NUM_PARAMS] = {};
+
 	RingBuffer<uint8_t, (1<<15)> sendQueue;
+	int server = -1;
+	bool serverOpen = false;
+	bool quitRequested = false;
+	bool closeRequested = false;
+
+	std::thread bridgeThread;
 	std::mutex bridgeMutex;
 	std::condition_variable bridgeCv;
 
-	/** Starts the Bridge Client Thread */
+	BridgeClient() {
+		bridgeThread = std::thread(&BridgeClient::run, this);
+	}
+
+	~BridgeClient() {
+		quitRequested = true;
+		bridgeThread.join();
+	}
+
+	// Bridge Thread methods
+
+	/** Starts the Bridge Thread */
 	void connect() {
 		int err;
+		disconnect();
 
 		// Open socket
 		server = socket(AF_INET, SOCK_STREAM, 0);
-		assert(server >= 0);
+		if (server < 0)
+			return;
+
+		// Avoid SIGPIPE
+		int flag = 1;
+		setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
 
 		// Connect to 127.0.0.1 on port 5000
 		struct sockaddr_in serverAddr;
@@ -38,68 +63,84 @@ struct BridgeClient {
 		serverAddr.sin_port = htons(5000);
 		err = ::connect(server, (struct sockaddr*) &serverAddr, sizeof(serverAddr));
 		if (err) {
-			printf("Could not connect to server\n");
+			disconnect();
 			return;
 		}
-	}
-
-	void flush() {
-		int err;
-
-		size_t sendLength = sendQueue.size();
-		if (sendLength == 0)
-			return;
-
-		uint8_t sendBuffer[sendLength];
-		sendQueue.shiftBuffer(sendBuffer, sendLength);
-		ssize_t written = ::send(server, sendBuffer, sendLength, 0);
-		// ssize_t written = ::send(server, buffer, length, MSG_NOSIGNAL);
-		if (written <= 0)
-			closeRequested = true;
-
-		// // Turn off Nagle
-		// int flag = 1;
-		// err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
-		// assert(!err);
-		// // Turn on Nagle
-		// flag = 0;
-		// err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
-		// assert(!err);
 	}
 
 	void disconnect() {
 		int err;
 		err = close(server);
+		(void) err;
+		server = -1;
+	}
+
+	void flush() {
+		int err;
+
+		// Length might be 0
+		size_t sendLength = sendQueue.size();
+		uint8_t sendBuffer[sendLength];
+		if (sendLength > 0)
+			sendQueue.shiftBuffer(sendBuffer, sendLength);
+		ssize_t written = ::send(server, sendBuffer, sendLength, 0);
+		// ssize_t written = ::send(server, buffer, length, MSG_NOSIGNAL);
+		if (written < 0)
+			serverOpen = false;
+
+		// // Turn off Nagle
+		// int flag = 1;
+		// err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
+		// // Turn on Nagle
+		// flag = 0;
+		// err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
+		// (void) err;
 	}
 
 	void run() {
-		while (!closeRequested) {
+		while (!quitRequested) {
 			// Wait before connecting or reconnecting
 			std::this_thread::sleep_for(std::chrono::duration<double>(0.5));
+			// Connect
 			connect();
+			if (server < 0)
+				continue;
+			welcome();
+			serverOpen = true;
 			// Flush buffer in a loop
-			while (!closeRequested) {
+			while (!quitRequested && serverOpen) {
 				std::unique_lock<std::mutex> lock(bridgeMutex);
 				auto timeout = std::chrono::duration<double>(10e-3);
 				auto cond = [&] {
 					return !sendQueue.empty();
 				};
 				if (bridgeCv.wait_for(lock, timeout, cond)) {
-					flush();
 				}
 				else {
 					// Do nothing if timed out, just loop around again
 				}
+				flush();
 			}
+			// Clear queue and disconnect
+			serverOpen = false;
+			sendQueue.clear();
 			disconnect();
 		}
 	}
 
+	void welcome() {
+		pushPassword();
+		pushSetChannel();
+		pushSetSampleRate();
+	}
+
+	// Send queue methods
+
 	void push(const uint8_t *buffer, int length) {
-		if (sendQueue.capacity() >= (size_t) length) {
-			sendQueue.pushBuffer(buffer, length);
-			bridgeCv.notify_one();
-		}
+		if (sendQueue.capacity() < (size_t) length)
+			return;
+		sendQueue.pushBuffer(buffer, length);
+		bridgeCv.notify_one();
 	}
 
 	template <typename T>
@@ -111,42 +152,51 @@ struct BridgeClient {
 	void pushBuffer(const T *p, int length) {
 		push((uint8_t*) p, length * sizeof(*p));
 	}
-};
 
-
-struct Bridge {
-	BridgeClient client;
-	int channel = -1;
-	int sampleRate = -1;
-	float params[NUM_PARAMS] = {};
-	std::thread bridgeThread;
-
-	Bridge() {
-		bridgeThread = std::thread(&BridgeClient::run, &client);
-
+	void pushPassword() {
 		const int password = 0xff00fefd;
-		client.push<uint32_t>(password);
+		push<uint32_t>(password);
 	}
 
-	~Bridge() {
-		client.push<uint8_t>(QUIT_COMMAND);
-		client.closeRequested = true;
-		bridgeThread.join();
+	void pushSetChannel() {
+		push<uint8_t>(CHANNEL_SET_COMMAND);
+		push<uint8_t>(channel);
+		for (int i = 0; i < NUM_PARAMS; i++)
+			pushSetParam(i);
 	}
+
+	void pushSetSampleRate() {
+		push<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
+		push<uint32_t>(sampleRate);
+	}
+
+	void pushSetParam(int i) {
+		push<uint8_t>(MIDI_MESSAGE_SEND_COMMAND);
+		uint8_t msg[3];
+		msg[0] = (0xc << 8) | 0;
+		msg[1] = i;
+		msg[2] = roundf(params[i] * 0xff);
+		pushBuffer<uint8_t>(msg, 3);
+	}
+
+	// VST/AU methods
 
 	void setChannel(int channel) {
-		if (channel != this->channel) {
-			client.push<uint8_t>(CHANNEL_SET_COMMAND);
-			client.push<uint8_t>(channel);
-			setSampleRate(sampleRate);
-		}
+		if (channel == this->channel)
+			return;
 		this->channel = channel;
+		if (!serverOpen)
+			return;
+		pushSetChannel();
 	}
 
 	void setSampleRate(int sampleRate) {
-		client.push<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
-		client.push<uint32_t>(sampleRate);
+		if (sampleRate == this->sampleRate)
+			return;
 		this->sampleRate = sampleRate;
+		if (!serverOpen)
+			return;
+		pushSetSampleRate();
 	}
 
 	int getChannel() {
@@ -154,8 +204,14 @@ struct Bridge {
 	}
 
 	void setParam(int i, float param) {
-		if (0 <= i && i < NUM_PARAMS)
-			params[i] = param;
+		if (i < 0 || NUM_PARAMS <= i)
+			return;
+		if (params[i] == param)
+			return;
+		params[i] = param;
+		if (!serverOpen)
+			return;
+		pushSetParam(i);
 	}
 
 	float getParam(int i) {
@@ -166,13 +222,15 @@ struct Bridge {
 	}
 
 	void processAudio(const float *input, float *output, int frames) {
-		client.push<uint8_t>(AUDIO_BUFFER_SEND_COMMAND);
-		client.push<uint32_t>(2*frames);
-		client.pushBuffer<float>(input, 2*frames);
-
 		for (int i = 0; i < frames; i++) {
 			output[2*i + 0] = 0.f;
 			output[2*i + 1] = 0.f;
 		}
+
+		if (!serverOpen)
+			return;
+		push<uint8_t>(AUDIO_BUFFER_SEND_COMMAND);
+		push<uint32_t>(2*frames);
+		pushBuffer<float>(input, 2*frames);
 	}
 };
