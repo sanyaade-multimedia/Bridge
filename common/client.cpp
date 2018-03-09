@@ -137,8 +137,10 @@ struct BridgeClient {
 	// Send queue methods
 
 	void push(const uint8_t *buffer, int length) {
-		if (sendQueue.capacity() < (size_t) length)
+		if (sendQueue.capacity() < (size_t) length) {
+			closeRequested = true;
 			return;
+		}
 		sendQueue.pushBuffer(buffer, length);
 		bridgeCv.notify_one();
 	}

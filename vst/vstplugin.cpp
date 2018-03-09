@@ -35,8 +35,13 @@ public:
 		}
 		client->processAudio(input, output, sampleFrames);
 		for (int i = 0; i < sampleFrames; i++) {
-			outputs[0][i] = output[2*i + 0];
-			outputs[1][i] = output[2*i + 1];
+			// To prevent the DAW from pausing the processReplacing() calls, add a noise floor so the DAW thinks audio is still being processed.
+			float r = (float) rand() / RAND_MAX;
+			r = 1.f - 2.f * r;
+			// Ableton Live's threshold is 1e-5 or -100dB
+			r *= 1.5e-5f; // -96dB
+			outputs[0][i] = output[2*i + 0] + r;
+			outputs[1][i] = output[2*i + 1] + r;
 		}
 	}
 
@@ -84,8 +89,7 @@ public:
 		}
 		else if (index > 0) {
 			// Automation parameters
-			// One-indexed, but offset by 1
-			snprintf(text, kVstMaxParamStrLen, "#%d", index - 1 + 1);
+			snprintf(text, kVstMaxParamStrLen, "#%d", index - 1);
 		}
 	}
 
@@ -106,6 +110,19 @@ public:
 
 	VstInt32 getVendorVersion() override {
 		return 0;
+	}
+
+	void open() override {
+		fprintf(stderr, "\n=============open============\n");
+	}
+	void close() override {
+		fprintf(stderr, "\n=============close============\n");
+	}
+	void suspend() override {
+		fprintf(stderr, "\n=============suspend============\n");
+	}
+	void resume() override {
+		fprintf(stderr, "\n=============resume============\n");
 	}
 };
 
