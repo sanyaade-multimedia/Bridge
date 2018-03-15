@@ -47,7 +47,7 @@ public:
 
 	void setParameter(VstInt32 index, float value) override {
 		if (index == 0) {
-			client->setChannel((int) roundf(value * 15.0));
+			client->setPort((int) roundf(value * 15.0));
 		}
 		else if (index > 0) {
 			client->setParam(index - 1, value);
@@ -56,7 +56,7 @@ public:
 
 	float getParameter(VstInt32 index) override {
 		if (index == 0) {
-			return client->getChannel() / 15.0;
+			return client->getPort() / 15.0;
 		}
 		else if (index > 0) {
 			return client->getParam(index - 1);
@@ -75,7 +75,7 @@ public:
 
 	void getParameterDisplay(VstInt32 index, char *text) override {
 		if (index == 0) {
-			snprintf(text, kVstMaxParamStrLen, "%d", client->getChannel() + 1);
+			snprintf(text, kVstMaxParamStrLen, "%d", client->getPort() + 1);
 		}
 		else if (index > 0) {
 			snprintf(text, kVstMaxParamStrLen, "%0.2f V", 10.f * client->getParam(index - 1));
@@ -84,8 +84,8 @@ public:
 
 	void getParameterName(VstInt32 index, char *text) override {
 		if (index == 0) {
-			// Channel selector
-			snprintf(text, kVstMaxParamStrLen, "Channel");
+			// Port selector
+			snprintf(text, kVstMaxParamStrLen, "Port");
 		}
 		else if (index > 0) {
 			// Automation parameters

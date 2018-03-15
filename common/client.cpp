@@ -16,14 +16,17 @@ using namespace rack;
 
 
 struct BridgeClient {
-	int channel = 0;
+	int port = 0;
 	int sampleRate = 44100;
 	float params[NUM_PARAMS] = {};
 
 	RingBuffer<uint8_t, (1<<15)> sendQueue;
 	int server = -1;
+	/** Whether the public API pushes to the queue */
 	bool serverOpen = false;
+	/** Whether the client has requested to shut down permanently */
 	bool quitRequested = false;
+	/** Whether the client has requested to close temporarily */
 	bool closeRequested = false;
 	bool audioActive = false;
 
@@ -136,7 +139,7 @@ struct BridgeClient {
 
 	void welcome() {
 		pushPassword();
-		pushSetChannel();
+		pushSetPort();
 		pushSetSampleRate();
 		pushSetAudioActive();
 	}
@@ -162,9 +165,9 @@ struct BridgeClient {
 		push<uint32_t>(password);
 	}
 
-	void pushSetChannel() {
-		push<uint8_t>(CHANNEL_SET_COMMAND);
-		push<uint8_t>(channel);
+	void pushSetPort() {
+		push<uint8_t>(PORT_SET_COMMAND);
+		push<uint8_t>(port);
 		for (int i = 0; i < NUM_PARAMS; i++)
 			pushSetParam(i);
 	}
@@ -192,13 +195,13 @@ struct BridgeClient {
 
 	// Public API
 
-	void setChannel(int channel) {
-		if (channel == this->channel)
+	void setPort(int port) {
+		if (port == this->port)
 			return;
-		this->channel = channel;
+		this->port = port;
 		if (!serverOpen)
 			return;
-		pushSetChannel();
+		pushSetPort();
 	}
 
 	void setSampleRate(int sampleRate) {
@@ -210,8 +213,8 @@ struct BridgeClient {
 		pushSetSampleRate();
 	}
 
-	int getChannel() {
-		return channel;
+	int getPort() {
+		return port;
 	}
 
 	void setParam(int i, float param) {
