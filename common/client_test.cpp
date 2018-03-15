@@ -9,11 +9,19 @@ int main(int argc, char *argv[]) {
 		client.setChannel(i);
 	}
 
-	float input[2*100] = {};
-	float output[2*100];
-	for (int i = 0; i < 100; i++) {
-		client.processAudio(input, output, 100);
-		std::this_thread::sleep_for(std::chrono::duration<double>(1.0));
-		printf(".\n");
+	const int n = 256;
+	float input[2*n] = {};
+	float output[2*n];
+	for (int i = 0; i < n; i++) {
+		float r = (float) rand() / RAND_MAX;
+		r = 1.f - 2.f * r;
+		r *= 0.01f;
+		input[2*i+0] = r;
+		input[2*i+1] = r;
+	}
+	while (1) {
+		client.processAudio(input, output, n);
+		std::this_thread::sleep_for(std::chrono::microseconds(100000 * n / 44100));
+		fprintf(stderr, ".");
 	}
 }
