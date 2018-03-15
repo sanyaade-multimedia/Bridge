@@ -120,9 +120,11 @@ public:
 	}
 	void suspend() override {
 		fprintf(stderr, "\n=============suspend============\n");
+		client->setAudioActive(false);
 	}
 	void resume() override {
 		fprintf(stderr, "\n=============resume============\n");
+		client->setAudioActive(true);
 	}
 };
 

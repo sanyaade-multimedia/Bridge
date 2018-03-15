@@ -25,6 +25,7 @@ struct BridgeClient {
 	bool serverOpen = false;
 	bool quitRequested = false;
 	bool closeRequested = false;
+	bool audioActive = false;
 
 	std::thread bridgeThread;
 	std::mutex bridgeMutex;
@@ -137,6 +138,7 @@ struct BridgeClient {
 		pushPassword();
 		pushSetChannel();
 		pushSetSampleRate();
+		pushSetAudioActive();
 	}
 
 	// Send queue methods
@@ -178,7 +180,14 @@ struct BridgeClient {
 		msg[0] = (0xc << 8) | 0;
 		msg[1] = i;
 		msg[2] = roundf(params[i] * 0xff);
-		pushBuffer(msg, 3);
+		push(msg, 3);
+	}
+
+	void pushSetAudioActive() {
+		if (audioActive)
+			push<uint8_t>(AUDIO_ACTIVATE);
+		else
+			push<uint8_t>(AUDIO_DEACTIVATE);
 	}
 
 	// Public API
@@ -234,5 +243,10 @@ struct BridgeClient {
 		push<uint8_t>(AUDIO_BUFFER_SEND_COMMAND);
 		push<uint32_t>(2*frames);
 		push((uint8_t*) input, 2*frames * sizeof(float));
+	}
+
+	void setAudioActive(bool audioActive) {
+		this->audioActive = audioActive;
+		pushSetAudioActive();
 	}
 };
