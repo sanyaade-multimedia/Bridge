@@ -41,7 +41,6 @@ struct BridgeClient {
 
 	// Bridge Thread methods
 
-	/** Starts the Bridge Thread */
 	void connect() {
 		int err;
 		disconnect();
@@ -51,9 +50,11 @@ struct BridgeClient {
 		if (server < 0)
 			return;
 
+#ifndef ARCH_LIN
 		// Avoid SIGPIPE
 		int flag = 1;
 		setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
+#endif
 
 		// Connect to 127.0.0.1 on port 5000
 		struct sockaddr_in serverAddr;
@@ -83,8 +84,12 @@ struct BridgeClient {
 		uint8_t sendBuffer[sendLength];
 		if (sendLength > 0)
 			sendQueue.shiftBuffer(sendBuffer, sendLength);
-		ssize_t written = ::send(server, sendBuffer, sendLength, 0);
-		// ssize_t written = ::send(server, buffer, length, MSG_NOSIGNAL);
+#ifdef ARCH_LIN
+		int sendFlags = MSG_NOSIGNAL;
+#else
+		int sendFlags = 0;
+#endif
+		ssize_t written = ::send(server, sendBuffer, sendLength, sendFlags);
 		if (written < 0)
 			serverOpen = false;
 
@@ -148,11 +153,6 @@ struct BridgeClient {
 		push((uint8_t*) &x, sizeof(x));
 	}
 
-	template <typename T>
-	void pushBuffer(const T *p, int length) {
-		push((uint8_t*) p, length * sizeof(*p));
-	}
-
 	void pushPassword() {
 		const int password = 0xff00fefd;
 		push<uint32_t>(password);
@@ -176,10 +176,10 @@ struct BridgeClient {
 		msg[0] = (0xc << 8) | 0;
 		msg[1] = i;
 		msg[2] = roundf(params[i] * 0xff);
-		pushBuffer<uint8_t>(msg, 3);
+		pushBuffer(msg, 3);
 	}
 
-	// VST/AU methods
+	// Public API
 
 	void setChannel(int channel) {
 		if (channel == this->channel)
@@ -231,6 +231,6 @@ struct BridgeClient {
 			return;
 		push<uint8_t>(AUDIO_BUFFER_SEND_COMMAND);
 		push<uint32_t>(2*frames);
-		pushBuffer<float>(input, 2*frames);
+		push((uint8_t*) input, 2*frames * sizeof(float));
 	}
 };
