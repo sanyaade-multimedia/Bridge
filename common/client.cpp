@@ -1,5 +1,6 @@
 #include "util/common.hpp"
 #include "dsp/ringbuffer.hpp"
+#include "bridgeprotocol.hpp"
 
 #include <unistd.h>
 #ifdef ARCH_WIN
@@ -22,58 +23,54 @@
 using namespace rack;
 
 
-enum BridgeCommand {
-	NO_COMMAND = 0,
-	START_COMMAND,
-	QUIT_COMMAND,
-	PORT_SET_COMMAND,
-	MIDI_MESSAGE_SEND_COMMAND,
-	AUDIO_SAMPLE_RATE_SET_COMMAND,
-	AUDIO_CHANNELS_SET_COMMAND,
-	AUDIO_BUFFER_SEND_COMMAND,
-	AUDIO_ACTIVATE,
-	AUDIO_DEACTIVATE,
-	NUM_COMMANDS
-};
-
 
 struct BridgeClient {
 	int port = 0;
-	int sampleRate = 44100;
 	float params[NUM_PARAMS] = {};
-
-	RingBuffer<uint8_t, (1<<15)> sendQueue;
-	int server = -1;
-	/** Whether the public API pushes to the queue */
-	bool serverOpen = false;
-	/** Whether the client has requested to shut down permanently */
-	bool quitRequested = false;
-	/** Whether the client has requested to close temporarily */
-	bool closeRequested = false;
+	int sampleRate = 44100;
 	bool audioActive = false;
 
-	std::thread bridgeThread;
-	std::mutex bridgeMutex;
-	std::condition_variable bridgeCv;
+	int server = -1;
+	/** Whether the server is ready to accept public API send() calls */
+	bool ready = false;
+	/** Whether the client should stop attempting to reconnect permanently */
+	bool running = false;
+
+	std::thread runThread;
 
 	BridgeClient() {
-		bridgeThread = std::thread(&BridgeClient::run, this);
+		runThread = std::thread(&BridgeClient::run, this);
 	}
 
 	~BridgeClient() {
-		quitRequested = true;
-		bridgeThread.join();
+		running = false;
+		runThread.join();
 	}
 
-	// Bridge Thread methods
+	void run() {
+		initialize();
+		running = true;
+		while (running) {
+			// Wait before connecting or reconnecting
+			std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
+			// Connect
+			connect();
+			welcome();
+			ready = true;
+			// Wait for server to disconnect
+			while (running && server >= 0) {
+				std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
+			}
+			ready = false;
+			disconnect();
+		}
+	}
 
-	void connect() {
-		int err;
-
+	void initialize() {
 		// Initialize sockets
 #ifdef ARCH_WIN
 		WSADATA wsaData;
-		err = WSAStartup(MAKEWORD(2,2), &wsaData);
+		err = WSAStartup(MAKEWORD(2, 2), &wsaData);
 		defer({
 			WSACleanup();
 		});
@@ -82,38 +79,27 @@ struct BridgeClient {
 			return;
 		}
 #endif
+	}
 
+	void connect() {
+		int err;
 
 		// Get address
-#ifdef ARCH_WIN
-		struct addrinfo hints;
-		struct addrinfo *result = NULL;
-		ZeroMemory(&hints, sizeof(hints));
-		hints.ai_family = AF_INET;
-		hints.ai_socktype = SOCK_STREAM;
-		hints.ai_protocol = IPPROTO_TCP;
-		hints.ai_flags = AI_PASSIVE;
-		err = getaddrinfo("127.0.0.1", "5000", &hints, &result);
-		if (err) {
-			fprintf(stderr, "Could not get Bridge client address\n");
-			return;
-		}
-		defer({
-			freeaddrinfo(result);
-		});
-#else
 		struct sockaddr_in addr;
 		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = AF_INET;
+#ifdef ARCH_WIN
+		InetPton(AF_INET, "127.0.0.1", &addr.sin_addr);
+#else
 		inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
-		addr.sin_port = htons(5000);
 #endif
+		addr.sin_port = htons(5000);
 
 		// Open socket
-#ifdef ARCH_WIN
-		server = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
-#else
 		server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#ifdef ARCH_WIN
+		if (server == INVALID_SOCKET)
+			server = -1;
 #endif
 		if (server < 0) {
 			fprintf(stderr, "Bridge server socket() failed\n");
@@ -129,11 +115,8 @@ struct BridgeClient {
 		setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
 #endif
 
-#ifdef ARCH_WIN
-		err = ::connect(server, result->ai_addr, (int)result->ai_addrlen);
-#else
-		err = ::connect(server, (struct sockaddr*) &serverAddr, sizeof(serverAddr));
-#endif
+		// Connect socket
+		err = ::connect(server, (struct sockaddr*) &addr, sizeof(addr));
 		if (err) {
 			disconnect();
 			return;
@@ -141,25 +124,63 @@ struct BridgeClient {
 	}
 
 	void disconnect() {
-		close(server);
+		if (server >= 0)
+			close(server);
 		server = -1;
 	}
 
-	void flush() {
-		// Length might be 0
-		size_t sendLength = sendQueue.size();
-		uint8_t sendBuffer[sendLength];
-		if (sendLength > 0)
-			sendQueue.shiftBuffer(sendBuffer, sendLength);
-#ifdef ARCH_LIN
-		int sendFlags = MSG_NOSIGNAL;
-#else
-		int sendFlags = 0;
-#endif
-		ssize_t written = ::send(server, (const char*) sendBuffer, sendLength, 0);
-		if (written < 0)
-			serverOpen = false;
+	/** Returns true if successful */
+	bool send(const void *buffer, int length) {
+		if (length <= 0)
+			return false;
+		if (server < 0)
+			return false;
 
+#ifdef ARCH_LIN
+		int flags = MSG_NOSIGNAL;
+#else
+		int flags = 0;
+#endif
+		ssize_t actual = ::send(server, buffer, length, flags);
+		if (actual != length) {
+			disconnect();
+			return false;
+		}
+		return true;
+	}
+
+	template <typename T>
+	bool send(T x) {
+		return send(&x, sizeof(x));
+	}
+
+	/** Returns true if successful */
+	bool recv(void *buffer, int length) {
+		if (length <= 0)
+			return false;
+		if (!ready)
+			return false;
+
+#ifdef ARCH_LIN
+		int flags = MSG_NOSIGNAL;
+#else
+		int flags = 0;
+#endif
+		ssize_t actual = ::recv(server, buffer, length, flags);
+		if (actual != length) {
+			disconnect();
+			return false;
+		}
+		return true;
+	}
+
+	template <typename T>
+	bool recv(T *x) {
+		return recv(x, sizeof(*x));
+	}
+
+	void flush() {
+		// int err;
 		// // Turn off Nagle
 		// int flag = 1;
 		// err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
@@ -169,91 +190,56 @@ struct BridgeClient {
 		// (void) err;
 	}
 
-	void run() {
-		while (!quitRequested) {
-			// Wait before connecting or reconnecting
-			std::this_thread::sleep_for(std::chrono::duration<double>(0.5));
-			// Connect
-			connect();
-			if (server < 0)
-				continue;
-			welcome();
-			serverOpen = true;
-			// Flush buffer in a loop
-			while (!quitRequested && serverOpen) {
-				std::unique_lock<std::mutex> lock(bridgeMutex);
-				auto timeout = std::chrono::duration<double>(10e-3);
-				auto cond = [&] {
-					return !sendQueue.empty();
-				};
-				if (bridgeCv.wait_for(lock, timeout, cond)) {
-				}
-				else {
-					// Do nothing if timed out, just loop around again
-				}
-				flush();
-			}
-			// Clear queue and disconnect
-			serverOpen = false;
-			sendQueue.clear();
-			disconnect();
-		}
-	}
+	// Private API
 
 	void welcome() {
-		pushPassword();
-		pushSetPort();
-		pushSetSampleRate();
-		pushSetAudioActive();
-	}
-
-	// Send queue methods
-
-	void push(const uint8_t *buffer, int length) {
-		if (sendQueue.capacity() < (size_t) length) {
-			closeRequested = true;
+		if (!ready)
 			return;
-		}
-		sendQueue.pushBuffer(buffer, length);
-		bridgeCv.notify_one();
+
+		send<uint32_t>(BRIDGE_HELLO);
+		sendSetPort();
 	}
 
-	template <typename T>
-	void push(T x) {
-		push((uint8_t*) &x, sizeof(x));
-	}
+	void sendSetPort() {
+		if (!ready)
+			return;
 
-	void pushPassword() {
-		const int password = 0xff00fefd;
-		push<uint32_t>(password);
-	}
-
-	void pushSetPort() {
-		push<uint8_t>(PORT_SET_COMMAND);
-		push<uint8_t>(port);
+		send<uint8_t>(PORT_SET_COMMAND);
+		send<uint8_t>(port);
 		for (int i = 0; i < NUM_PARAMS; i++)
-			pushSetParam(i);
+			sendSetParam(i);
+		sendSetSampleRate();
+		sendSetAudioActive();
 	}
 
-	void pushSetSampleRate() {
-		push<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
-		push<uint32_t>(sampleRate);
+	void sendSetSampleRate() {
+		if (!ready)
+			return;
+
+		send<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
+		send<uint32_t>(sampleRate);
 	}
 
-	void pushSetParam(int i) {
-		push<uint8_t>(MIDI_MESSAGE_SEND_COMMAND);
+	void sendSetParam(int i) {
+		if (!ready)
+			return;
+
+		send<uint8_t>(MIDI_MESSAGE_SEND_COMMAND);
 		uint8_t msg[3];
 		msg[0] = (0xc << 8) | 0;
 		msg[1] = i;
 		msg[2] = roundf(params[i] * 0xff);
-		push(msg, 3);
+		send(msg, 3);
 	}
 
-	void pushSetAudioActive() {
+	void sendSetAudioActive() {
+		if (!ready)
+			return;
+
 		if (audioActive)
-			push<uint8_t>(AUDIO_ACTIVATE);
+			send<uint8_t>(AUDIO_ACTIVATE);
 		else
-			push<uint8_t>(AUDIO_DEACTIVATE);
+			send<uint8_t>(AUDIO_DEACTIVATE);
 	}
 
 	// Public API
@@ -262,18 +248,14 @@ struct BridgeClient {
 		if (port == this->port)
 			return;
 		this->port = port;
-		if (!serverOpen)
-			return;
-		pushSetPort();
+		sendSetPort();
 	}
 
 	void setSampleRate(int sampleRate) {
 		if (sampleRate == this->sampleRate)
 			return;
 		this->sampleRate = sampleRate;
-		if (!serverOpen)
-			return;
-		pushSetSampleRate();
+		sendSetSampleRate();
 	}
 
 	int getPort() {
@@ -281,14 +263,12 @@ struct BridgeClient {
 	}
 
 	void setParam(int i, float param) {
-		if (i < 0 || NUM_PARAMS <= i)
+		if (!(0 <= i && i < NUM_PARAMS))
 			return;
 		if (params[i] == param)
 			return;
 		params[i] = param;
-		if (!serverOpen)
-			return;
-		pushSetParam(i);
+		sendSetParam(i);
 	}
 
 	float getParam(int i) {
@@ -299,20 +279,25 @@ struct BridgeClient {
 	}
 
 	void processAudio(const float *input, float *output, int frames) {
-		for (int i = 0; i < frames; i++) {
-			output[2*i + 0] = 0.f;
-			output[2*i + 1] = 0.f;
+		if (!ready) {
+			memset(output, 0, 2*frames * sizeof(float));
+			return;
 		}
 
-		if (!serverOpen)
-			return;
-		push<uint8_t>(AUDIO_BUFFER_SEND_COMMAND);
-		push<uint32_t>(2*frames);
-		push((uint8_t*) input, 2*frames * sizeof(float));
+		send<uint8_t>(AUDIO_PROCESS_COMMAND);
+		send<uint32_t>(2 * frames);
+		send((const uint8_t*) input, 2*frames * sizeof(float));
+		flush();
+
+		// recv((uint8_t*) output, 2*frames * sizeof(float));
+		for (int i = 0; i < frames; i++) {
+			output[2 * i + 0] = 0.f;
+			output[2 * i + 1] = 0.f;
+		}
 	}
 
 	void setAudioActive(bool audioActive) {
 		this->audioActive = audioActive;
-		pushSetAudioActive();
+		sendSetAudioActive();
 	}
 };
