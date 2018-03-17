@@ -2,7 +2,10 @@
 #include <stdio.h>
 #include <math.h>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wsuggest-override"
 #include "public.sdk/source/vst2.x/audioeffectx.h"
+#pragma GCC diagnostic pop
 
 
 #include "../common/client.cpp"

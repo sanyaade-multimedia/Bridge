@@ -1,11 +1,18 @@
-#include "bridge.hpp"
+#include "util/common.hpp"
 #include "dsp/ringbuffer.hpp"
 
 #include <unistd.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <netinet/tcp.h>
-#include <sys/time.h>
+#ifdef ARCH_WIN
+	#include <winsock2.h>
+	#include <ws2tcpip.h>
+#else
+	#include <sys/socket.h>
+	#include <netinet/in.h>
+	#include <arpa/inet.h>
+	#include <netinet/tcp.h>
+	#include <fcntl.h>
+#endif
+
 #include <thread>
 
 
@@ -13,6 +20,19 @@
 
 
 using namespace rack;
+
+
+enum BridgeCommand {
+	NO_COMMAND = 0,
+	START_COMMAND,
+	QUIT_COMMAND,
+	CHANNEL_SET_COMMAND,
+	AUDIO_SAMPLE_RATE_SET_COMMAND,
+	AUDIO_CHANNELS_SET_COMMAND,
+	AUDIO_BUFFER_SEND_COMMAND,
+	MIDI_MESSAGE_SEND_COMMAND,
+	NUM_COMMANDS
+};
 
 
 struct BridgeClient {
@@ -44,24 +64,71 @@ struct BridgeClient {
 	/** Starts the Bridge Thread */
 	void connect() {
 		int err;
-		disconnect();
+
+		// Initialize sockets
+#ifdef ARCH_WIN
+		WSADATA wsaData;
+		err = WSAStartup(MAKEWORD(2,2), &wsaData);
+		defer({
+			WSACleanup();
+		});
+		if (err) {
+			fprintf(stderr, "Could not initialize Winsock\n");
+			return;
+		}
+#endif
+
+
+		// Get address
+#ifdef ARCH_WIN
+		struct addrinfo hints;
+		struct addrinfo *result = NULL;
+		ZeroMemory(&hints, sizeof(hints));
+		hints.ai_family = AF_INET;
+		hints.ai_socktype = SOCK_STREAM;
+		hints.ai_protocol = IPPROTO_TCP;
+		hints.ai_flags = AI_PASSIVE;
+		err = getaddrinfo("127.0.0.1", "5000", &hints, &result);
+		if (err) {
+			fprintf(stderr, "Could not get Bridge client address\n");
+			return;
+		}
+		defer({
+			freeaddrinfo(result);
+		});
+#else
+		struct sockaddr_in addr;
+		memset(&addr, 0, sizeof(addr));
+		addr.sin_family = AF_INET;
+		inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+		addr.sin_port = htons(5000);
+#endif
 
 		// Open socket
-		server = socket(AF_INET, SOCK_STREAM, 0);
-		if (server < 0)
+#ifdef ARCH_WIN
+		server = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+#else
+		server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#endif
+		if (server < 0) {
+			fprintf(stderr, "Bridge server socket() failed\n");
 			return;
+		}
+		defer({
+			close(server);
+		});
 
 		// Avoid SIGPIPE
+#ifdef ARCH_MAC
 		int flag = 1;
-		setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
+		setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
+#endif
 
-		// Connect to 127.0.0.1 on port 5000
-		struct sockaddr_in serverAddr;
-		memset(&serverAddr, 0, sizeof(serverAddr));
-		serverAddr.sin_family = AF_INET;
-		inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr);
-		serverAddr.sin_port = htons(5000);
+#ifdef ARCH_WIN
+		err = ::connect(server, result->ai_addr, (int)result->ai_addrlen);
+#else
 		err = ::connect(server, (struct sockaddr*) &serverAddr, sizeof(serverAddr));
+#endif
 		if (err) {
 			disconnect();
 			return;
@@ -69,21 +136,17 @@ struct BridgeClient {
 	}
 
 	void disconnect() {
-		int err;
-		err = close(server);
-		(void) err;
+		close(server);
 		server = -1;
 	}
 
 	void flush() {
-		int err;
-
 		// Length might be 0
 		size_t sendLength = sendQueue.size();
 		uint8_t sendBuffer[sendLength];
 		if (sendLength > 0)
 			sendQueue.shiftBuffer(sendBuffer, sendLength);
-		ssize_t written = ::send(server, sendBuffer, sendLength, 0);
+		ssize_t written = ::send(server, (const char*) sendBuffer, sendLength, 0);
 		// ssize_t written = ::send(server, buffer, length, MSG_NOSIGNAL);
 		if (written < 0)
 			serverOpen = false;

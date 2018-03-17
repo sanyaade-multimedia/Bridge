@@ -16,7 +16,7 @@ ifeq ($(ARCH), mac)
 	BUNDLE = VCV-Bridge.vst
 endif
 ifeq ($(ARCH), win)
-	LDFLAGS += -shared
+	LDFLAGS += -shared -static -lws2_32
 	TARGET = VCV-Bridge.dll
 endif
 ifeq ($(ARCH), lin)
@@ -56,6 +56,10 @@ endif
 install: dist
 ifeq ($(ARCH), mac)
 	sudo cp -R dist/$(BUNDLE) /Library/Audio/Plug-Ins/VST/
+endif
+ifeq ($(ARCH), win)
+	mkdir -p /c/Program\ Files/Steinberg/VstPlugins
+	cp -R dist/$(TARGET) /c/Program\ Files/Steinberg/VstPlugins/
 endif
 
 uninstall:
