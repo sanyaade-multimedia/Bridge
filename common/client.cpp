@@ -26,25 +26,31 @@ enum BridgeCommand {
 	NO_COMMAND = 0,
 	START_COMMAND,
 	QUIT_COMMAND,
-	CHANNEL_SET_COMMAND,
+	PORT_SET_COMMAND,
+	MIDI_MESSAGE_SEND_COMMAND,
 	AUDIO_SAMPLE_RATE_SET_COMMAND,
 	AUDIO_CHANNELS_SET_COMMAND,
 	AUDIO_BUFFER_SEND_COMMAND,
-	MIDI_MESSAGE_SEND_COMMAND,
+	AUDIO_ACTIVATE,
+	AUDIO_DEACTIVATE,
 	NUM_COMMANDS
 };
 
 
 struct BridgeClient {
-	int channel = 0;
+	int port = 0;
 	int sampleRate = 44100;
 	float params[NUM_PARAMS] = {};
 
 	RingBuffer<uint8_t, (1<<15)> sendQueue;
 	int server = -1;
+	/** Whether the public API pushes to the queue */
 	bool serverOpen = false;
+	/** Whether the client has requested to shut down permanently */
 	bool quitRequested = false;
+	/** Whether the client has requested to close temporarily */
 	bool closeRequested = false;
+	bool audioActive = false;
 
 	std::thread bridgeThread;
 	std::mutex bridgeMutex;
@@ -61,7 +67,6 @@ struct BridgeClient {
 
 	// Bridge Thread methods
 
-	/** Starts the Bridge Thread */
 	void connect() {
 		int err;
 
@@ -121,7 +126,7 @@ struct BridgeClient {
 		// Avoid SIGPIPE
 #ifdef ARCH_MAC
 		int flag = 1;
-		setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
+		setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
 #endif
 
 #ifdef ARCH_WIN
@@ -146,8 +151,12 @@ struct BridgeClient {
 		uint8_t sendBuffer[sendLength];
 		if (sendLength > 0)
 			sendQueue.shiftBuffer(sendBuffer, sendLength);
+#ifdef ARCH_LIN
+		int sendFlags = MSG_NOSIGNAL;
+#else
+		int sendFlags = 0;
+#endif
 		ssize_t written = ::send(server, (const char*) sendBuffer, sendLength, 0);
-		// ssize_t written = ::send(server, buffer, length, MSG_NOSIGNAL);
 		if (written < 0)
 			serverOpen = false;
 
@@ -193,8 +202,9 @@ struct BridgeClient {
 
 	void welcome() {
 		pushPassword();
-		pushSetChannel();
+		pushSetPort();
 		pushSetSampleRate();
+		pushSetAudioActive();
 	}
 
 	// Send queue methods
@@ -213,19 +223,14 @@ struct BridgeClient {
 		push((uint8_t*) &x, sizeof(x));
 	}
 
-	template <typename T>
-	void pushBuffer(const T *p, int length) {
-		push((uint8_t*) p, length * sizeof(*p));
-	}
-
 	void pushPassword() {
 		const int password = 0xff00fefd;
 		push<uint32_t>(password);
 	}
 
-	void pushSetChannel() {
-		push<uint8_t>(CHANNEL_SET_COMMAND);
-		push<uint8_t>(channel);
+	void pushSetPort() {
+		push<uint8_t>(PORT_SET_COMMAND);
+		push<uint8_t>(port);
 		for (int i = 0; i < NUM_PARAMS; i++)
 			pushSetParam(i);
 	}
@@ -241,18 +246,25 @@ struct BridgeClient {
 		msg[0] = (0xc << 8) | 0;
 		msg[1] = i;
 		msg[2] = roundf(params[i] * 0xff);
-		pushBuffer<uint8_t>(msg, 3);
+		push(msg, 3);
 	}
 
-	// VST/AU methods
+	void pushSetAudioActive() {
+		if (audioActive)
+			push<uint8_t>(AUDIO_ACTIVATE);
+		else
+			push<uint8_t>(AUDIO_DEACTIVATE);
+	}
 
-	void setChannel(int channel) {
-		if (channel == this->channel)
+	// Public API
+
+	void setPort(int port) {
+		if (port == this->port)
 			return;
-		this->channel = channel;
+		this->port = port;
 		if (!serverOpen)
 			return;
-		pushSetChannel();
+		pushSetPort();
 	}
 
 	void setSampleRate(int sampleRate) {
@@ -264,8 +276,8 @@ struct BridgeClient {
 		pushSetSampleRate();
 	}
 
-	int getChannel() {
-		return channel;
+	int getPort() {
+		return port;
 	}
 
 	void setParam(int i, float param) {
@@ -296,6 +308,11 @@ struct BridgeClient {
 			return;
 		push<uint8_t>(AUDIO_BUFFER_SEND_COMMAND);
 		push<uint32_t>(2*frames);
-		pushBuffer<float>(input, 2*frames);
+		push((uint8_t*) input, 2*frames * sizeof(float));
+	}
+
+	void setAudioActive(bool audioActive) {
+		this->audioActive = audioActive;
+		pushSetAudioActive();
 	}
 };

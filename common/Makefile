@@ -4,7 +4,7 @@ RACK_DIR ?= ../..
 CXXFLAGS = -I$(RACK_DIR)/include
 LDFLAGS = -pthread
 
-all: server client_test
+all: client_test
 
 include $(RACK_DIR)/compile.mk
 

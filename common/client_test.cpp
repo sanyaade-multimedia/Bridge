@@ -3,11 +3,10 @@
 
 
 int main(int argc, char *argv[]) {
-	BridgeClient client;
-	client.setSampleRate(44100);
-	for (int i = 0; i < 16; i++) {
-		client.setChannel(i);
-	}
+	BridgeClient *client = new BridgeClient();
+	client->setSampleRate(44100);
+	client->setPort(0);
+	client->setAudioActive(true);
 
 	const int n = 256;
 	float input[2*n] = {};
@@ -20,8 +19,10 @@ int main(int argc, char *argv[]) {
 		input[2*i+1] = r;
 	}
 	while (1) {
-		client.processAudio(input, output, n);
+		client->processAudio(input, output, n);
 		std::this_thread::sleep_for(std::chrono::microseconds(100000 * n / 44100));
-		fprintf(stderr, ".");
+		printf("%d frames\n", n);
 	}
+
+	delete client;
 }
