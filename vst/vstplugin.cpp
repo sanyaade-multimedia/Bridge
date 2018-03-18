@@ -16,7 +16,7 @@ private:
 	BridgeClient *client;
 
 public:
-	BridgeEffect(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 0, 1 + NUM_PARAMS) {
+	BridgeEffect(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 0, 1 + BRIDGE_NUM_PARAMS) {
 		setNumInputs(2);
 		setNumOutputs(2);
 		setUniqueID('VCVB');
@@ -128,6 +128,11 @@ public:
 	void resume() override {
 		debug("=============resume============");
 		client->setAudioActive(true);
+	}
+
+	void setSampleRate(float sampleRate) override {
+		AudioEffectX::setSampleRate(sampleRate);
+		client->setSampleRate((int) sampleRate);
 	}
 };
 

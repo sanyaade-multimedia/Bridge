@@ -16,6 +16,7 @@
 #endif
 
 #include <thread>
+#include <chrono>
 
 
 using namespace rack;
@@ -63,6 +64,9 @@ struct BridgeClient {
 			std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
 			// Connect
 			connect();
+			if (server < 0)
+				continue;
+			debug("Connected");
 			welcome();
 			ready = true;
 			// Wait for server to disconnect
@@ -70,6 +74,7 @@ struct BridgeClient {
 				std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
 			}
 			disconnect();
+			debug("Disconnected");
 		}
 	}
 
@@ -268,11 +273,12 @@ struct BridgeClient {
 	}
 
 	void processAudio(const float *input, float *output, int frames) {
+		memset(output, 0, 2*frames * sizeof(float));
 		if (!ready) {
-			memset(output, 0, 2*frames * sizeof(float));
 			return;
 		}
 
+		auto startTime = std::chrono::high_resolution_clock::now();
 		uint32_t length = 2*frames;
 		send<uint8_t>(AUDIO_PROCESS_COMMAND);
 		send<uint32_t>(length);
@@ -280,10 +286,11 @@ struct BridgeClient {
 		flush();
 
 		recv((uint8_t*) output, length * sizeof(float));
-		for (int i = 0; i < frames; i++) {
-			output[2 * i + 0] = 0.f;
-			output[2 * i + 1] = 0.f;
-		}
+		auto endTime = std::chrono::high_resolution_clock::now();
+		double time = std::chrono::duration<double>(endTime - startTime).count();
+		float p = time / ((float) frames / 44100);
+		if (p > 0.75)
+			debug("%d frames, %f ms, %f%%", frames, 1000.0*time, p);
 	}
 
 	void setAudioActive(bool audioActive) {
