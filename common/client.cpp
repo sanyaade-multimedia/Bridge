@@ -275,20 +275,19 @@ struct BridgeClient {
 	}
 
 	void processAudio(const float *input, float *output, int frames) {
-		memset(output, 0, 2*frames * sizeof(float));
+		memset(output, 0, BRIDGE_OUTPUTS * frames * sizeof(float));
 		if (!ready) {
 			return;
 		}
 
 		std::lock_guard<std::recursive_mutex> lock(mutex);
 		auto startTime = std::chrono::high_resolution_clock::now();
-		uint32_t length = 2*frames;
 		send<uint8_t>(AUDIO_PROCESS_COMMAND);
-		send<uint32_t>(length);
-		send((const uint8_t*) input, length * sizeof(float));
+		send<uint32_t>(frames);
+		send(input, BRIDGE_INPUTS * frames * sizeof(float));
 		// flush();
 
-		recv((uint8_t*) output, length * sizeof(float));
+		recv(output, BRIDGE_OUTPUTS * frames * sizeof(float));
 		auto endTime = std::chrono::high_resolution_clock::now();
 		double time = std::chrono::duration<double>(endTime - startTime).count();
 		float p = time / ((float) frames / 44100);

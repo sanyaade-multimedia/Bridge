@@ -17,8 +17,8 @@ private:
 
 public:
 	BridgeEffect(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 0, 1 + BRIDGE_NUM_PARAMS) {
-		setNumInputs(2);
-		setNumOutputs(2);
+		setNumInputs(BRIDGE_INPUTS);
+		setNumOutputs(BRIDGE_OUTPUTS);
 		setUniqueID('VCVB');
 		canProcessReplacing();
 		client = new BridgeClient();
@@ -30,21 +30,25 @@ public:
 
 	void processReplacing(float **inputs, float **outputs, VstInt32 sampleFrames) override {
 		// Interleave samples
-		float input[2 * sampleFrames];
-		float output[2 * sampleFrames];
+		float input[BRIDGE_INPUTS * sampleFrames];
+		float output[BRIDGE_OUTPUTS * sampleFrames];
 		for (int i = 0; i < sampleFrames; i++) {
-			input[2*i + 0] = inputs[0][i];
-			input[2*i + 1] = inputs[1][i];
+			for (int c = 0; c < BRIDGE_INPUTS; c++) {
+				input[BRIDGE_INPUTS*i + c] = inputs[c][i];
+			}
 		}
+		// Process audio
 		client->processAudio(input, output, sampleFrames);
+		// Uninterleave samples
 		for (int i = 0; i < sampleFrames; i++) {
 			// To prevent the DAW from pausing the processReplacing() calls, add a noise floor so the DAW thinks audio is still being processed.
 			float r = (float) rand() / RAND_MAX;
 			r = 1.f - 2.f * r;
 			// Ableton Live's threshold is 1e-5 or -100dB
 			r *= 1.5e-5f; // -96dB
-			outputs[0][i] = output[2*i + 0] + r;
-			outputs[1][i] = output[2*i + 1] + r;
+			for (int c = 0; c < BRIDGE_OUTPUTS; c++) {
+				outputs[c][i] = output[BRIDGE_OUTPUTS*i + c] + r;
+			}
 		}
 	}
 
