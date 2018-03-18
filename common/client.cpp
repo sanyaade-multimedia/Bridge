@@ -101,11 +101,11 @@ struct BridgeClient {
 		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = AF_INET;
 #ifdef ARCH_WIN
-		InetPton(AF_INET, "127.0.0.1", &addr.sin_addr);
+		InetPton(AF_INET, BRIDGE_HOST, &addr.sin_addr);
 #else
-		inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+		inet_pton(AF_INET, BRIDGE_HOST, &addr.sin_addr);
 #endif
-		addr.sin_port = htons(5000);
+		addr.sin_port = htons(BRIDGE_PORT);
 
 		// Open socket
 		server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -149,7 +149,7 @@ struct BridgeClient {
 #else
 		int flags = 0;
 #endif
-		ssize_t actual = ::send(server, buffer, length, flags);
+		ssize_t actual = ::send(server, (const char*) buffer, length, flags);
 		if (actual != length) {
 			ready = false;
 			return false;
@@ -172,7 +172,7 @@ struct BridgeClient {
 #else
 		int flags = 0;
 #endif
-		ssize_t actual = ::recv(server, buffer, length, flags);
+		ssize_t actual = ::recv(server, (char*) buffer, length, flags);
 		if (actual != length) {
 			ready = false;
 			return false;
