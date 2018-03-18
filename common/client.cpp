@@ -103,11 +103,7 @@ struct BridgeClient {
 		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = AF_INET;
 		addr.sin_port = htons(BRIDGE_PORT);
-#ifdef ARCH_WIN
 		addr.sin_addr.s_addr = inet_addr(BRIDGE_HOST);
-#else
-		inet_pton(AF_INET, BRIDGE_HOST, &addr.sin_addr);
-#endif
 
 		// Open socket
 		server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
