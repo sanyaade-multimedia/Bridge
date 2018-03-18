@@ -6,7 +6,6 @@
 #include <unistd.h>
 #ifdef ARCH_WIN
 	#include <winsock2.h>
-	#include <ws2tcpip.h>
 #else
 	#include <sys/socket.h>
 	#include <netinet/in.h>
@@ -79,6 +78,9 @@ struct BridgeClient {
 	}
 
 	void initialize() {
+		int err;
+		(void) err;
+
 		// Initialize sockets
 #ifdef ARCH_WIN
 		WSADATA wsaData;
@@ -100,21 +102,17 @@ struct BridgeClient {
 		struct sockaddr_in addr;
 		memset(&addr, 0, sizeof(addr));
 		addr.sin_family = AF_INET;
+		addr.sin_port = htons(BRIDGE_PORT);
 #ifdef ARCH_WIN
-		InetPton(AF_INET, BRIDGE_HOST, &addr.sin_addr);
+		addr.sin_addr.s_addr = inet_addr(BRIDGE_HOST);
 #else
 		inet_pton(AF_INET, BRIDGE_HOST, &addr.sin_addr);
 #endif
-		addr.sin_port = htons(BRIDGE_PORT);
 
 		// Open socket
 		server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-#ifdef ARCH_WIN
-		if (server == INVALID_SOCKET)
-			server = -1;
-#endif
 		if (server < 0) {
-			debug("Bridge server socket() failed");
+			debug("Bridge client socket() failed");
 			return;
 		}
 
