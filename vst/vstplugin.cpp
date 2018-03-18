@@ -50,7 +50,7 @@ public:
 
 	void setParameter(VstInt32 index, float value) override {
 		if (index == 0) {
-			client->setPort((int) roundf(value * 15.0));
+			client->setPort((int) roundf(value * (BRIDGE_NUM_PARAMS - 1.f)));
 		}
 		else if (index > 0) {
 			client->setParam(index - 1, value);
@@ -59,7 +59,7 @@ public:
 
 	float getParameter(VstInt32 index) override {
 		if (index == 0) {
-			return client->getPort() / 15.0;
+			return client->getPort() / (BRIDGE_NUM_PARAMS - 1.f);
 		}
 		else if (index > 0) {
 			return client->getParam(index - 1);
@@ -116,17 +116,17 @@ public:
 	}
 
 	void open() override {
-		fprintf(stderr, "\n=============open============\n");
+		debug("=============open============");
 	}
 	void close() override {
-		fprintf(stderr, "\n=============close============\n");
+		debug("=============close============");
 	}
 	void suspend() override {
-		fprintf(stderr, "\n=============suspend============\n");
+		debug("=============suspend============");
 		client->setAudioActive(false);
 	}
 	void resume() override {
-		fprintf(stderr, "\n=============resume============\n");
+		debug("=============resume============");
 		client->setAudioActive(true);
 	}
 };

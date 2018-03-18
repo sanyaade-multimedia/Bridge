@@ -7,6 +7,9 @@ int main(int argc, char *argv[]) {
 	client->setSampleRate(44100);
 	client->setPort(0);
 	client->setAudioActive(true);
+	std::this_thread::sleep_for(std::chrono::duration<double>(1.0));
+	delete client;
+	return 0;
 
 	const int n = 256;
 	float input[2*n] = {};

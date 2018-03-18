@@ -2,6 +2,7 @@
 #include "dsp/ringbuffer.hpp"
 #include "bridgeprotocol.hpp"
 
+#include <stdarg.h>
 #include <unistd.h>
 #ifdef ARCH_WIN
 	#include <winsock2.h>
@@ -17,28 +18,36 @@
 #include <thread>
 
 
-#define NUM_PARAMS 16
-
-
 using namespace rack;
 
 
+void rack::debug(const char *format, ...) {
+	va_list args;
+	va_start(args, format);
+	fprintf(stderr, "[debug] ");
+	vfprintf(stderr, format, args);
+	fprintf(stderr, "\n");
+	fflush(stderr);
+	va_end(args);
+}
+
 
 struct BridgeClient {
-	int port = 0;
-	float params[NUM_PARAMS] = {};
-	int sampleRate = 44100;
-	bool audioActive = false;
-
 	int server = -1;
 	/** Whether the server is ready to accept public API send() calls */
 	bool ready = false;
-	/** Whether the client should stop attempting to reconnect permanently */
+	/** Whether the client should stop attempting to reconnect */
 	bool running = false;
+
+	int port = 0;
+	float params[BRIDGE_NUM_PARAMS] = {};
+	int sampleRate = 44100;
+	bool audioActive = false;
 
 	std::thread runThread;
 
 	BridgeClient() {
+		running = true;
 		runThread = std::thread(&BridgeClient::run, this);
 	}
 
@@ -49,7 +58,6 @@ struct BridgeClient {
 
 	void run() {
 		initialize();
-		running = true;
 		while (running) {
 			// Wait before connecting or reconnecting
 			std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
@@ -58,10 +66,9 @@ struct BridgeClient {
 			welcome();
 			ready = true;
 			// Wait for server to disconnect
-			while (running && server >= 0) {
+			while (running && ready) {
 				std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
 			}
-			ready = false;
 			disconnect();
 		}
 	}
@@ -75,7 +82,7 @@ struct BridgeClient {
 			WSACleanup();
 		});
 		if (err) {
-			fprintf(stderr, "Could not initialize Winsock\n");
+			debug("Could not initialize Winsock");
 			return;
 		}
 #endif
@@ -102,12 +109,9 @@ struct BridgeClient {
 			server = -1;
 #endif
 		if (server < 0) {
-			fprintf(stderr, "Bridge server socket() failed\n");
+			debug("Bridge server socket() failed");
 			return;
 		}
-		defer({
-			close(server);
-		});
 
 		// Avoid SIGPIPE
 #ifdef ARCH_MAC
@@ -124,6 +128,7 @@ struct BridgeClient {
 	}
 
 	void disconnect() {
+		ready = false;
 		if (server >= 0)
 			close(server);
 		server = -1;
@@ -133,8 +138,6 @@ struct BridgeClient {
 	bool send(const void *buffer, int length) {
 		if (length <= 0)
 			return false;
-		if (!ready)
-			return false;
 
 #ifdef ARCH_LIN
 		int flags = MSG_NOSIGNAL;
@@ -143,7 +146,7 @@ struct BridgeClient {
 #endif
 		ssize_t actual = ::send(server, buffer, length, flags);
 		if (actual != length) {
-			disconnect();
+			ready = false;
 			return false;
 		}
 		return true;
@@ -158,8 +161,6 @@ struct BridgeClient {
 	bool recv(void *buffer, int length) {
 		if (length <= 0)
 			return false;
-		if (!ready)
-			return false;
 
 #ifdef ARCH_LIN
 		int flags = MSG_NOSIGNAL;
@@ -168,7 +169,7 @@ struct BridgeClient {
 #endif
 		ssize_t actual = ::recv(server, buffer, length, flags);
 		if (actual != length) {
-			disconnect();
+			ready = false;
 			return false;
 		}
 		return true;
@@ -180,62 +181,47 @@ struct BridgeClient {
 	}
 
 	void flush() {
-		// int err;
-		// // Turn off Nagle
-		// int flag = 1;
-		// err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
-		// // Turn on Nagle
-		// flag = 0;
-		// err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
-		// (void) err;
+		int err;
+		// Turn off Nagle
+		int flag = 1;
+		err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
+		// Turn on Nagle
+		flag = 0;
+		err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
+		(void) err;
 	}
 
 	// Private API
 
 	void welcome() {
-		if (!ready)
-			return;
-
 		send<uint32_t>(BRIDGE_HELLO);
 		sendSetPort();
 	}
 
 	void sendSetPort() {
-		if (!ready)
-			return;
-
 		send<uint8_t>(PORT_SET_COMMAND);
 		send<uint8_t>(port);
-		for (int i = 0; i < NUM_PARAMS; i++)
+		for (int i = 0; i < BRIDGE_NUM_PARAMS; i++)
 			sendSetParam(i);
 		sendSetSampleRate();
 		sendSetAudioActive();
 	}
 
 	void sendSetSampleRate() {
-		if (!ready)
-			return;
-
 		send<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
 		send<uint32_t>(sampleRate);
 	}
 
 	void sendSetParam(int i) {
-		if (!ready)
-			return;
-
 		send<uint8_t>(MIDI_MESSAGE_SEND_COMMAND);
 		uint8_t msg[3];
-		msg[0] = (0xc << 8) | 0;
+		msg[0] = (0xc << 4) | 0;
 		msg[1] = i;
 		msg[2] = roundf(params[i] * 0xff);
 		send(msg, 3);
 	}
 
 	void sendSetAudioActive() {
-		if (!ready)
-			return;
-
 		if (audioActive)
 			send<uint8_t>(AUDIO_ACTIVATE);
 		else
@@ -248,14 +234,16 @@ struct BridgeClient {
 		if (port == this->port)
 			return;
 		this->port = port;
-		sendSetPort();
+		if (ready)
+			sendSetPort();
 	}
 
 	void setSampleRate(int sampleRate) {
 		if (sampleRate == this->sampleRate)
 			return;
 		this->sampleRate = sampleRate;
-		sendSetSampleRate();
+		if (ready)
+			sendSetSampleRate();
 	}
 
 	int getPort() {
@@ -263,16 +251,17 @@ struct BridgeClient {
 	}
 
 	void setParam(int i, float param) {
-		if (!(0 <= i && i < NUM_PARAMS))
+		if (!(0 <= i && i < BRIDGE_NUM_PARAMS))
 			return;
 		if (params[i] == param)
 			return;
 		params[i] = param;
-		sendSetParam(i);
+		if (ready)
+			sendSetParam(i);
 	}
 
 	float getParam(int i) {
-		if (0 <= i && i < NUM_PARAMS)
+		if (0 <= i && i < BRIDGE_NUM_PARAMS)
 			return params[i];
 		else
 			return 0.f;
@@ -284,12 +273,13 @@ struct BridgeClient {
 			return;
 		}
 
+		uint32_t length = 2*frames;
 		send<uint8_t>(AUDIO_PROCESS_COMMAND);
-		send<uint32_t>(2 * frames);
-		send((const uint8_t*) input, 2*frames * sizeof(float));
+		send<uint32_t>(length);
+		send((const uint8_t*) input, length * sizeof(float));
 		flush();
 
-		// recv((uint8_t*) output, 2*frames * sizeof(float));
+		recv((uint8_t*) output, length * sizeof(float));
 		for (int i = 0; i < frames; i++) {
 			output[2 * i + 0] = 0.f;
 			output[2 * i + 1] = 0.f;
@@ -298,6 +288,7 @@ struct BridgeClient {
 
 	void setAudioActive(bool audioActive) {
 		this->audioActive = audioActive;
-		sendSetAudioActive();
+		if (ready)
+			sendSetAudioActive();
 	}
 };
