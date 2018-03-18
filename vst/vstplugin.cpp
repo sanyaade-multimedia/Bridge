@@ -116,17 +116,17 @@ public:
 	}
 
 	void open() override {
-		debug("=============open============");
+		// debug("=============open============");
 	}
 	void close() override {
-		debug("=============close============");
+		// debug("=============close============");
 	}
 	void suspend() override {
-		debug("=============suspend============");
+		// debug("=============suspend============");
 		client->setAudioActive(false);
 	}
 	void resume() override {
-		debug("=============resume============");
+		// debug("=============resume============");
 		client->setAudioActive(true);
 	}
 

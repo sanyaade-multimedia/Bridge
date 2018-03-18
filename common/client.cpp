@@ -15,6 +15,7 @@
 #endif
 
 #include <thread>
+#include <mutex>
 #include <chrono>
 
 
@@ -45,6 +46,7 @@ struct BridgeClient {
 	bool audioActive = false;
 
 	std::thread runThread;
+	std::recursive_mutex mutex;
 
 	BridgeClient() {
 		running = true;
@@ -193,11 +195,13 @@ struct BridgeClient {
 	// Private API
 
 	void welcome() {
+		std::lock_guard<std::recursive_mutex> lock(mutex);
 		send<uint32_t>(BRIDGE_HELLO);
 		sendSetPort();
 	}
 
 	void sendSetPort() {
+		std::lock_guard<std::recursive_mutex> lock(mutex);
 		send<uint8_t>(PORT_SET_COMMAND);
 		send<uint8_t>(port);
 		for (int i = 0; i < BRIDGE_NUM_PARAMS; i++)
@@ -207,20 +211,24 @@ struct BridgeClient {
 	}
 
 	void sendSetSampleRate() {
+		std::lock_guard<std::recursive_mutex> lock(mutex);
 		send<uint8_t>(AUDIO_SAMPLE_RATE_SET_COMMAND);
 		send<uint32_t>(sampleRate);
 	}
 
 	void sendSetParam(int i) {
+		std::lock_guard<std::recursive_mutex> lock(mutex);
 		send<uint8_t>(MIDI_MESSAGE_SEND_COMMAND);
 		uint8_t msg[3];
-		msg[0] = (0xc << 4) | 0;
+		msg[0] = (0xb << 4) | 0;
 		msg[1] = i;
-		msg[2] = roundf(params[i] * 0xff);
+		msg[2] = roundf(params[i] * 0x7f);
 		send(msg, 3);
+		flush();
 	}
 
 	void sendSetAudioActive() {
+		std::lock_guard<std::recursive_mutex> lock(mutex);
 		if (audioActive)
 			send<uint8_t>(AUDIO_ACTIVATE);
 		else
@@ -272,12 +280,13 @@ struct BridgeClient {
 			return;
 		}
 
+		std::lock_guard<std::recursive_mutex> lock(mutex);
 		auto startTime = std::chrono::high_resolution_clock::now();
 		uint32_t length = 2*frames;
 		send<uint8_t>(AUDIO_PROCESS_COMMAND);
 		send<uint32_t>(length);
 		send((const uint8_t*) input, length * sizeof(float));
-		flush();
+		// flush();
 
 		recv((uint8_t*) output, length * sizeof(float));
 		auto endTime = std::chrono::high_resolution_clock::now();
