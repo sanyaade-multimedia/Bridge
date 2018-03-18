@@ -133,7 +133,7 @@ struct BridgeClient {
 	bool send(const void *buffer, int length) {
 		if (length <= 0)
 			return false;
-		if (server < 0)
+		if (!ready)
 			return false;
 
 #ifdef ARCH_LIN
