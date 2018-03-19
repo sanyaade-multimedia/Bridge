@@ -120,18 +120,12 @@ public:
 	}
 
 	void open() override {
-		// debug("=============open============");
 	}
 	void close() override {
-		// debug("=============close============");
 	}
 	void suspend() override {
-		// debug("=============suspend============");
-		client->setAudioActive(false);
 	}
 	void resume() override {
-		// debug("=============resume============");
-		client->setAudioActive(true);
 	}
 
 	void setSampleRate(float sampleRate) override {

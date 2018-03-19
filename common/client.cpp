@@ -43,7 +43,6 @@ struct BridgeClient {
 	int port = 0;
 	float params[BRIDGE_NUM_PARAMS] = {};
 	int sampleRate = 44100;
-	bool audioActive = false;
 
 	std::thread runThread;
 	std::recursive_mutex mutex;
@@ -207,7 +206,6 @@ struct BridgeClient {
 		for (int i = 0; i < BRIDGE_NUM_PARAMS; i++)
 			sendSetParam(i);
 		sendSetSampleRate();
-		sendSetAudioActive();
 	}
 
 	void sendSetSampleRate() {
@@ -225,14 +223,6 @@ struct BridgeClient {
 		msg[2] = roundf(params[i] * 0x7f);
 		send(msg, 3);
 		flush();
-	}
-
-	void sendSetAudioActive() {
-		std::lock_guard<std::recursive_mutex> lock(mutex);
-		if (audioActive)
-			send<uint8_t>(AUDIO_ACTIVATE);
-		else
-			send<uint8_t>(AUDIO_DEACTIVATE);
 	}
 
 	// Public API
@@ -293,11 +283,5 @@ struct BridgeClient {
 		float p = time / ((float) frames / 44100);
 		if (p > 0.75)
 			debug("%d frames, %f ms, %f%%", frames, 1000.0*time, p);
-	}
-
-	void setAudioActive(bool audioActive) {
-		this->audioActive = audioActive;
-		if (ready)
-			sendSetAudioActive();
 	}
 };
