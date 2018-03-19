@@ -66,3 +66,8 @@ uninstall:
 ifeq ($(ARCH), mac)
 	sudo rm -rfv /Library/Audio/Plug-Ins/VST/$(BUNDLE)
 endif
+
+run: install
+ifeq ($(ARCH), win)
+	/c/Program\ Files/REAPER\ \(x64\)/reaper
+endif

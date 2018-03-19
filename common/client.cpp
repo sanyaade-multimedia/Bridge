@@ -66,7 +66,7 @@ struct BridgeClient {
 			connect();
 			if (server < 0)
 				continue;
-			debug("Connected");
+			debug("Bridge client connected");
 			welcome();
 			ready = true;
 			// Wait for server to disconnect
@@ -74,31 +74,23 @@ struct BridgeClient {
 				std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
 			}
 			disconnect();
-			debug("Disconnected");
+			debug("Bridge client disconnected");
 		}
 	}
 
 	void initialize() {
-		int err;
-		(void) err;
-
 		// Initialize sockets
 #ifdef ARCH_WIN
 		WSADATA wsaData;
-		err = WSAStartup(MAKEWORD(2, 2), &wsaData);
-		defer({
-			WSACleanup();
-		});
-		if (err) {
+		if (WSAStartup(MAKEWORD(2, 2), &wsaData)) {
 			debug("Could not initialize Winsock");
 			return;
 		}
 #endif
+		debug("Bridge client initialized");
 	}
 
 	void connect() {
-		int err;
-
 		// Get address
 		struct sockaddr_in addr;
 		memset(&addr, 0, sizeof(addr));
@@ -120,8 +112,7 @@ struct BridgeClient {
 #endif
 
 		// Connect socket
-		err = ::connect(server, (struct sockaddr*) &addr, sizeof(addr));
-		if (err) {
+		if (::connect(server, (struct sockaddr*) &addr, sizeof(addr))) {
 			disconnect();
 			return;
 		}
@@ -144,10 +135,14 @@ struct BridgeClient {
 #else
 		int flags = 0;
 #endif
-		ssize_t actual = ::send(server, (const char*) buffer, length, flags);
-		if (actual != length) {
-			ready = false;
-			return false;
+		ssize_t remaining = 0;
+		while (remaining < length) {
+			ssize_t actual = ::send(server, (const char*) buffer, length, flags);
+			if (actual <= 0) {
+				ready = false;
+				return false;
+			}
+			remaining += actual;
 		}
 		return true;
 	}
@@ -167,10 +162,14 @@ struct BridgeClient {
 #else
 		int flags = 0;
 #endif
-		ssize_t actual = ::recv(server, (char*) buffer, length, flags);
-		if (actual != length) {
-			ready = false;
-			return false;
+		ssize_t remaining = 0;
+		while (remaining < length) {
+			ssize_t actual = ::recv(server, (char*) buffer + remaining, length - remaining, flags);
+			if (actual <= 0) {
+				ready = false;
+				return false;
+			}
+			remaining += actual;
 		}
 		return true;
 	}
@@ -181,14 +180,12 @@ struct BridgeClient {
 	}
 
 	void flush() {
-		int err;
 		// Turn off Nagle
 		int flag = 1;
-		err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
+		setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
 		// Turn on Nagle
 		flag = 0;
-		err = setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
-		(void) err;
+		setsockopt(server, IPPROTO_TCP, TCP_NODELAY, (char*) &flag, sizeof(int));
 	}
 
 	// Private API
@@ -216,7 +213,7 @@ struct BridgeClient {
 
 	void sendSetParam(int i) {
 		std::lock_guard<std::recursive_mutex> lock(mutex);
-		send<uint8_t>(MIDI_MESSAGE_SEND_COMMAND);
+		send<uint8_t>(MIDI_MESSAGE_COMMAND);
 		uint8_t msg[3];
 		msg[0] = (0xb << 4) | 0;
 		msg[1] = i;
@@ -274,10 +271,17 @@ struct BridgeClient {
 		auto startTime = std::chrono::high_resolution_clock::now();
 		send<uint8_t>(AUDIO_PROCESS_COMMAND);
 		send<uint32_t>(frames);
-		send(input, BRIDGE_INPUTS * frames * sizeof(float));
+
+		if (!send(input, BRIDGE_INPUTS * frames * sizeof(float))) {
+			debug("Failed to send");
+			return;
+		}
 		// flush();
 
-		recv(output, BRIDGE_OUTPUTS * frames * sizeof(float));
+		if (!recv(output, BRIDGE_OUTPUTS * frames * sizeof(float))) {
+			debug("Failed to receive");
+			return;
+		}
 		auto endTime = std::chrono::high_resolution_clock::now();
 		double time = std::chrono::duration<double>(endTime - startTime).count();
 		float p = time / ((float) frames / 44100);

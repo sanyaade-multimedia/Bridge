@@ -2,7 +2,7 @@
 RACK_DIR ?= ../..
 
 CXXFLAGS = -I$(RACK_DIR)/include
-LDFLAGS = -pthread
+LDFLAGS = -static -pthread -lws2_32
 
 all: client_test
 
