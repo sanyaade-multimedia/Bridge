@@ -25,7 +25,7 @@ using namespace rack;
 void rack::debug(const char *format, ...) {
 	va_list args;
 	va_start(args, format);
-	fprintf(stderr, "[debug] ");
+	fprintf(stderr, "[VCV Bridge] ");
 	vfprintf(stderr, format, args);
 	fprintf(stderr, "\n");
 	fflush(stderr);
@@ -291,14 +291,14 @@ struct BridgeClient {
 		send<uint32_t>(frames);
 
 		if (!send(input, BRIDGE_INPUTS * frames * sizeof(float))) {
-			debug("Failed to send");
+			debug("send() failed");
 			return;
 		}
 		// flush();
 
 		// Receive audio
 		if (!recv(output, BRIDGE_OUTPUTS * frames * sizeof(float))) {
-			debug("Failed to receive");
+			debug("recv() failed");
 			return;
 		}
 	}
