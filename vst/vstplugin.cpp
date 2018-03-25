@@ -21,6 +21,8 @@ public:
 		setNumOutputs(BRIDGE_OUTPUTS);
 		setUniqueID('VCVB');
 		canProcessReplacing();
+		// No DAWs I've tested honor this.
+		noTail(true);
 		client = new BridgeClient();
 	}
 
@@ -38,7 +40,7 @@ public:
 			}
 		}
 		// Process audio
-		client->processAudio(input, output, sampleFrames);
+		client->processStream(input, output, sampleFrames);
 		// Uninterleave samples
 		for (int i = 0; i < sampleFrames; i++) {
 			// To prevent the DAW from pausing the processReplacing() calls, add a noise floor so the DAW thinks audio is still being processed.
@@ -50,6 +52,10 @@ public:
 				outputs[c][i] = output[BRIDGE_OUTPUTS*i + c] + r;
 			}
 		}
+
+		// TEMP
+		// VstTimeInfo *timeInfo = getTimeInfo(0);
+		// debug("%f %f %f %f", timeInfo->ppqPos, timeInfo->samplePos, timeInfo->barStartPos, timeInfo->tempo);
 	}
 
 	void setParameter(VstInt32 index, float value) override {
@@ -96,21 +102,21 @@ public:
 		}
 		else if (index > 0) {
 			// Automation parameters
-			snprintf(text, kVstMaxParamStrLen, "#%d", index - 1);
+			snprintf(text, kVstMaxParamStrLen, "CC %d", index - 1);
 		}
 	}
 
-	bool getEffectName(char* name) override {
+	bool getEffectName(char *name) override {
 		snprintf(name, kVstMaxEffectNameLen, "VCV Bridge");
 		return true;
 	}
 
-	bool getVendorString(char* text) override {
+	bool getVendorString(char *text) override {
 		snprintf(text, kVstMaxProductStrLen, "VCV");
 		return true;
 	}
 
-	bool getProductString(char* text) override {
+	bool getProductString(char *text) override {
 		snprintf(text, kVstMaxVendorStrLen, "VCV Bridge");
 		return true;
 	}
@@ -131,6 +137,17 @@ public:
 	void setSampleRate(float sampleRate) override {
 		AudioEffectX::setSampleRate(sampleRate);
 		client->setSampleRate((int) sampleRate);
+	}
+
+	VstInt32 processEvents(VstEvents *events) override {
+		for (int i = 0; i < events->numEvents; i++) {
+			VstEvent *event = events->events[i];
+			if (event->type == kVstMidiType) {
+				VstMidiEvent *midiEvent = (VstMidiEvent*) event;
+				// debug("MIDI %02x %02x %02x", midiEvent->midiData[0], midiEvent->midiData[1], midiEvent->midiData[2]);
+			}
+		}
+		return 0;
 	}
 };
 

@@ -53,6 +53,7 @@ dist: all
 	mkdir -p dist/$(BUNDLE)/Contents/MacOS
 	cp Info.plist dist/$(BUNDLE)/Contents/
 	cp $(TARGET) dist/$(BUNDLE)/Contents/MacOS
+	strip -S dist/$(BUNDLE)/Contents/MacOS/$(TARGET)
 	cd dist && zip -5 -r VCV-Bridge-$(VERSION)-$(ARCH)-au.zip $(BUNDLE)
 
 install: dist
@@ -61,3 +62,5 @@ install: dist
 uninstall:
 	sudo rm -rfv /Library/Audio/Plug-Ins/Components/$(BUNDLE)
 
+val: install
+	auval -v aufx BRDG VCV_ -strict -de

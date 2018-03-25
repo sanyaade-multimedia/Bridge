@@ -8,13 +8,11 @@
 			<key>description</key>
 			<string>VCV Bridge</string>
 			<key>factoryFunction</key>
-			<string>GainFactory</string>
+			<string>BridgeEffectFactory</string>
 			<key>manufacturer</key>
 			<string>VCV_</string>
 			<key>name</key>
 			<string>VCV Bridge</string>
-			<key>sandboxSafe</key>
-			<true/>
 			<key>subtype</key>
 			<string>BRDG</string>
 			<key>type</key>

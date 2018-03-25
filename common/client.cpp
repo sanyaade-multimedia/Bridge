@@ -41,8 +41,11 @@ struct BridgeClient {
 	bool running = false;
 
 	int port = 0;
+	bool portDirty = false;
 	float params[BRIDGE_NUM_PARAMS] = {};
+	bool paramsDirty[BRIDGE_NUM_PARAMS] = {};
 	int sampleRate = 44100;
+	bool sampleRateDirty = false;
 
 	std::thread runThread;
 	std::recursive_mutex mutex;
@@ -76,6 +79,7 @@ struct BridgeClient {
 			disconnect();
 			debug("Bridge client disconnected");
 		}
+		debug("Bridge client destroyed");
 	}
 
 	void initialize() {
@@ -228,16 +232,14 @@ struct BridgeClient {
 		if (port == this->port)
 			return;
 		this->port = port;
-		if (ready)
-			sendSetPort();
+		portDirty = true;
 	}
 
 	void setSampleRate(int sampleRate) {
 		if (sampleRate == this->sampleRate)
 			return;
 		this->sampleRate = sampleRate;
-		if (ready)
-			sendSetSampleRate();
+		sampleRateDirty = true;
 	}
 
 	int getPort() {
@@ -250,8 +252,7 @@ struct BridgeClient {
 		if (params[i] == param)
 			return;
 		params[i] = param;
-		if (ready)
-			sendSetParam(i);
+		paramsDirty[i] = true;
 	}
 
 	float getParam(int i) {
@@ -261,14 +262,31 @@ struct BridgeClient {
 			return 0.f;
 	}
 
-	void processAudio(const float *input, float *output, int frames) {
+	void processStream(const float *input, float *output, int frames) {
+		// Zero output buffer
 		memset(output, 0, BRIDGE_OUTPUTS * frames * sizeof(float));
 		if (!ready) {
 			return;
 		}
 
 		std::lock_guard<std::recursive_mutex> lock(mutex);
-		auto startTime = std::chrono::high_resolution_clock::now();
+		// Send commands if they need to be updated (are dirty)
+		if (portDirty) {
+			portDirty = false;
+			sendSetPort();
+		}
+		if (sampleRateDirty) {
+			sampleRateDirty = false;
+			sendSetSampleRate();
+		}
+		for (int i = 0; i < BRIDGE_NUM_PARAMS; i++) {
+			if (paramsDirty[i]) {
+				paramsDirty[i] = false;
+				sendSetParam(i);
+			}
+		}
+
+		// Send audio
 		send<uint8_t>(AUDIO_PROCESS_COMMAND);
 		send<uint32_t>(frames);
 
@@ -278,14 +296,10 @@ struct BridgeClient {
 		}
 		// flush();
 
+		// Receive audio
 		if (!recv(output, BRIDGE_OUTPUTS * frames * sizeof(float))) {
 			debug("Failed to receive");
 			return;
 		}
-		auto endTime = std::chrono::high_resolution_clock::now();
-		double time = std::chrono::duration<double>(endTime - startTime).count();
-		float p = time / ((float) frames / 44100);
-		if (p > 0.75)
-			debug("%d frames, %f ms, %f%%", frames, 1000.0*time, p);
 	}
 };
