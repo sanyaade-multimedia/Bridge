@@ -69,7 +69,7 @@ struct BridgeClient {
 			connect();
 			if (server < 0)
 				continue;
-			debug("Bridge client connected");
+			debug("client connected");
 			welcome();
 			ready = true;
 			// Wait for server to disconnect
@@ -77,9 +77,9 @@ struct BridgeClient {
 				std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
 			}
 			disconnect();
-			debug("Bridge client disconnected");
+			debug("client disconnected");
 		}
-		debug("Bridge client destroyed");
+		debug("client destroyed");
 	}
 
 	void initialize() {
@@ -91,7 +91,7 @@ struct BridgeClient {
 			return;
 		}
 #endif
-		debug("Bridge client initialized");
+		debug("client initialized");
 	}
 
 	void connect() {
@@ -105,18 +105,22 @@ struct BridgeClient {
 		// Open socket
 		server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (server < 0) {
-			debug("Bridge client socket() failed");
+			debug("socket() failed: error %d", errno);
 			return;
 		}
 
 		// Avoid SIGPIPE
 #ifdef ARCH_MAC
 		int flag = 1;
-		setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int));
+		if (setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int))) {
+			debug("setsockopt() failed: error %d", errno);
+			return;
+		}
 #endif
 
 		// Connect socket
 		if (::connect(server, (struct sockaddr*) &addr, sizeof(addr))) {
+			debug("connect() failed: error %d", errno);
 			disconnect();
 			return;
 		}
@@ -124,8 +128,11 @@ struct BridgeClient {
 
 	void disconnect() {
 		ready = false;
-		if (server >= 0)
-			close(server);
+		if (server >= 0) {
+			if (close(server)) {
+				debug("close() failed: error %d", errno);
+			}
+		}
 		server = -1;
 	}
 
