@@ -45,7 +45,7 @@ ifeq ($(ARCH), mac)
 	cp Info.plist dist/$(BUNDLE)/Contents/
 	cp PkgInfo dist/$(BUNDLE)/Contents/
 	cp $(TARGET) dist/$(BUNDLE)/Contents/MacOS/
-	strip -x dist/$(BUNDLE)/Contents/MacOS/$(TARGET)
+	strip -S dist/$(BUNDLE)/Contents/MacOS/$(TARGET)
 	cd dist && zip -5 -r VCV-Bridge-$(VERSION)-$(ARCH)-vst.zip $(BUNDLE)
 endif
 ifeq ($(ARCH), win)
