@@ -3,7 +3,7 @@ VERSION = master
 RACK_DIR ?= ../..
 include $(RACK_DIR)/arch.mk
 
-VST2_SDK = VST2_SDK
+VST2_SDK ?= VST2_SDK
 
 FLAGS += -fPIC
 FLAGS += -I$(VST2_SDK) -I$(RACK_DIR)/include

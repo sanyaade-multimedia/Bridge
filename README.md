@@ -1,5 +1,6 @@
 # VCV Bridge
 
+Documentation in the Bridge section of https://vcvrack.com/manual/Core.html.
 
 ## Building
 
