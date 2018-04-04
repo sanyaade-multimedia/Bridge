@@ -3,7 +3,7 @@ VERSION = master
 RACK_DIR ?= ../..
 include $(RACK_DIR)/arch.mk
 
-VST2_SDK = VST2_SDK
+VST2_SDK ?= VST2_SDK
 
 FLAGS += -fPIC
 FLAGS += -I$(VST2_SDK) -I$(RACK_DIR)/include
@@ -45,7 +45,7 @@ ifeq ($(ARCH), mac)
 	cp Info.plist dist/$(BUNDLE)/Contents/
 	cp PkgInfo dist/$(BUNDLE)/Contents/
 	cp $(TARGET) dist/$(BUNDLE)/Contents/MacOS/
-	strip -x dist/$(BUNDLE)/Contents/MacOS/$(TARGET)
+	strip -S dist/$(BUNDLE)/Contents/MacOS/$(TARGET)
 	cd dist && zip -5 -r VCV-Bridge-$(VERSION)-$(ARCH)-vst.zip $(BUNDLE)
 endif
 ifeq ($(ARCH), win)
