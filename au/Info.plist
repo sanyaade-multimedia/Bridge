@@ -12,7 +12,7 @@
 			<key>manufacturer</key>
 			<string>VCV_</string>
 			<key>name</key>
-			<string>VCV Bridge</string>
+			<string>VCV: VCV Bridge</string>
 			<key>subtype</key>
 			<string>BRDG</string>
 			<key>type</key>
