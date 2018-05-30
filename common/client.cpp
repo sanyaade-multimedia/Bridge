@@ -14,6 +14,7 @@
 	#include <fcntl.h>
 #endif
 
+#include <vector>
 #include <thread>
 #include <mutex>
 #include <chrono>
@@ -22,7 +23,7 @@
 using namespace rack;
 
 
-void rack::debug(const char *format, ...) {
+void log(const char *format, ...) {
 	va_list args;
 	va_start(args, format);
 	fprintf(stderr, "[VCV Bridge] ");
@@ -31,6 +32,13 @@ void rack::debug(const char *format, ...) {
 	fflush(stderr);
 	va_end(args);
 }
+
+
+struct MidiMessage {
+	uint8_t cmd;
+	uint8_t data1;
+	uint8_t data2;
+};
 
 
 struct BridgeClient {
@@ -46,6 +54,7 @@ struct BridgeClient {
 	bool paramsDirty[BRIDGE_NUM_PARAMS] = {};
 	int sampleRate = 44100;
 	bool sampleRateDirty = false;
+	std::vector<MidiMessage> midiQueue;
 
 	std::thread runThread;
 	std::recursive_mutex mutex;
@@ -69,7 +78,7 @@ struct BridgeClient {
 			connect();
 			if (server < 0)
 				continue;
-			debug("client connected");
+			log("client connected");
 			welcome();
 			ready = true;
 			// Wait for server to disconnect
@@ -77,9 +86,9 @@ struct BridgeClient {
 				std::this_thread::sleep_for(std::chrono::duration<double>(0.1));
 			}
 			disconnect();
-			debug("client disconnected");
+			log("client disconnected");
 		}
-		debug("client destroyed");
+		log("client destroyed");
 	}
 
 	void initialize() {
@@ -87,11 +96,11 @@ struct BridgeClient {
 #ifdef ARCH_WIN
 		WSADATA wsaData;
 		if (WSAStartup(MAKEWORD(2, 2), &wsaData)) {
-			debug("Could not initialize Winsock");
+			log("Could not initialize Winsock");
 			return;
 		}
 #endif
-		debug("client initialized");
+		log("client initialized");
 	}
 
 	void connect() {
@@ -105,7 +114,7 @@ struct BridgeClient {
 		// Open socket
 		server = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 		if (server < 0) {
-			debug("socket() failed: error %d", errno);
+			log("socket() failed: error %d", errno);
 			return;
 		}
 
@@ -113,14 +122,14 @@ struct BridgeClient {
 #ifdef ARCH_MAC
 		int flag = 1;
 		if (setsockopt(server, SOL_SOCKET, SO_NOSIGPIPE, &flag, sizeof(int))) {
-			debug("setsockopt() failed: error %d", errno);
+			log("setsockopt() failed: error %d", errno);
 			return;
 		}
 #endif
 
 		// Connect socket
 		if (::connect(server, (struct sockaddr*) &addr, sizeof(addr))) {
-			debug("connect() failed: error %d", errno);
+			log("connect() failed: error %d", errno);
 			disconnect();
 			return;
 		}
@@ -130,7 +139,7 @@ struct BridgeClient {
 		ready = false;
 		if (server >= 0) {
 			if (close(server)) {
-				debug("close() failed: error %d", errno);
+				log("close() failed: error %d", errno);
 			}
 		}
 		server = -1;
@@ -226,11 +235,20 @@ struct BridgeClient {
 		std::lock_guard<std::recursive_mutex> lock(mutex);
 		send<uint8_t>(MIDI_MESSAGE_COMMAND);
 		uint8_t msg[3];
-		msg[0] = (0xb << 4) | 0;
+		msg[0] = 0xb0;
 		msg[1] = i;
 		msg[2] = roundf(params[i] * 0x7f);
 		send(msg, 3);
 		flush();
+	}
+
+	void sendMidi() {
+		std::lock_guard<std::recursive_mutex> lock(mutex);
+		for (MidiMessage msg : midiQueue) {
+			send<uint8_t>(MIDI_MESSAGE_COMMAND);
+			send<MidiMessage>(msg);
+		}
+		midiQueue.clear();
 	}
 
 	// Public API
@@ -269,6 +287,42 @@ struct BridgeClient {
 			return 0.f;
 	}
 
+	void pushMidi(MidiMessage msg) {
+		midiQueue.push_back(msg);
+	}
+
+	void pushClock() {
+		MidiMessage msg;
+		msg.cmd = 0xf8;
+		msg.data1 = 0x00;
+		msg.data2 = 0x00;
+		pushMidi(msg);
+	}
+
+	void pushStart() {
+		MidiMessage msg;
+		msg.cmd = 0xfa;
+		msg.data1 = 0x00;
+		msg.data2 = 0x00;
+		pushMidi(msg);
+	}
+
+	void pushContinue() {
+		MidiMessage msg;
+		msg.cmd = 0xfb;
+		msg.data1 = 0x00;
+		msg.data2 = 0x00;
+		pushMidi(msg);
+	}
+
+	void pushStop() {
+		MidiMessage msg;
+		msg.cmd = 0xfc;
+		msg.data1 = 0x00;
+		msg.data2 = 0x00;
+		pushMidi(msg);
+	}
+
 	void processStream(const float *input, float *output, int frames) {
 		// Zero output buffer
 		memset(output, 0, BRIDGE_OUTPUTS * frames * sizeof(float));
@@ -293,19 +347,21 @@ struct BridgeClient {
 			}
 		}
 
+		sendMidi();
+
 		// Send audio
 		send<uint8_t>(AUDIO_PROCESS_COMMAND);
 		send<uint32_t>(frames);
 
 		if (!send(input, BRIDGE_INPUTS * frames * sizeof(float))) {
-			debug("send() failed");
+			log("send() failed");
 			return;
 		}
 		// flush();
 
 		// Receive audio
 		if (!recv(output, BRIDGE_OUTPUTS * frames * sizeof(float))) {
-			debug("recv() failed");
+			log("recv() failed");
 			return;
 		}
 	}

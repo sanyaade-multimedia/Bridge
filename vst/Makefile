@@ -4,6 +4,16 @@ RACK_DIR ?= ../..
 include $(RACK_DIR)/arch.mk
 
 VST2_SDK ?= VST2_SDK
+TARGET := VCV-Bridge
+
+TYPE ?= effect
+
+ifeq ($(TYPE), instrument)
+	FLAGS += -DINSTRUMENT
+	TARGET := $(TARGET)-Instrument
+else
+	FLAGS += -DEFFECT
+endif
 
 FLAGS += -fPIC
 FLAGS += -I$(VST2_SDK) -I$(RACK_DIR)/include
@@ -12,16 +22,16 @@ ifeq ($(ARCH), mac)
 	FLAGS += -arch i386 -arch x86_64
 	LDFLAGS += -arch i386 -arch x86_64
 	LDFLAGS += -bundle
-	TARGET = VCV-Bridge
-	BUNDLE = VCV-Bridge.vst
+	BUNDLE := $(TARGET).vst
 endif
 ifeq ($(ARCH), win)
 	LDFLAGS += -shared -static -lws2_32
-	TARGET = VCV-Bridge.dll
+	TARGET := $(TARGET).dll
 endif
 ifeq ($(ARCH), lin)
 $(error The VST plugin is not available for Linux at this time. If you've built Linux VSTs before, you're welcome to contribute to the build system)
 endif
+
 
 SOURCES += vstplugin.cpp
 SOURCES += $(VST2_SDK)/public.sdk/source/vst2.x/audioeffect.cpp
@@ -42,7 +52,11 @@ ifeq ($(ARCH), mac)
 	mkdir -p dist
 	mkdir -p dist/$(BUNDLE)/Contents
 	mkdir -p dist/$(BUNDLE)/Contents/MacOS
-	cp Info.plist dist/$(BUNDLE)/Contents/
+ifeq ($(TYPE), instrument)
+	cp Info-Instrument.plist dist/$(BUNDLE)/Contents/Info.plist
+else
+	cp Info.plist dist/$(BUNDLE)/Contents/Info.plist
+endif
 	cp PkgInfo dist/$(BUNDLE)/Contents/
 	cp $(TARGET) dist/$(BUNDLE)/Contents/MacOS/
 	strip -S dist/$(BUNDLE)/Contents/MacOS/$(TARGET)

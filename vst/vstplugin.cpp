@@ -11,18 +11,23 @@
 #include "../common/client.cpp"
 
 
-class BridgeEffect : public AudioEffectX {
-private:
+struct BridgeEffect : public AudioEffectX {
 	BridgeClient *client;
+	int lastPpq = -1;
+	bool lastPlaying = false;
 
-public:
 	BridgeEffect(audioMasterCallback audioMaster) : AudioEffectX(audioMaster, 0, 1 + BRIDGE_NUM_PARAMS) {
+#if INSTRUMENT
+		isSynth(true);
+		// setNumInputs(0);
+#else
+#endif
 		setNumInputs(BRIDGE_INPUTS);
 		setNumOutputs(BRIDGE_OUTPUTS);
+
 		setUniqueID('VCVB');
 		canProcessReplacing();
-		// No DAWs I've tested honor this.
-		noTail(true);
+		noTail(false);
 		client = new BridgeClient();
 	}
 
@@ -31,6 +36,28 @@ public:
 	}
 
 	void processReplacing(float **inputs, float **outputs, VstInt32 sampleFrames) override {
+		// Check for clock pulse
+		VstTimeInfo *timeInfo = getTimeInfo(0);
+		// log("%f %x", timeInfo->ppqPos, timeInfo->flags);
+		if (timeInfo->flags & kVstPpqPosValid) {
+			int ppq = (int) floor(timeInfo->ppqPos * 24);
+			if (ppq != lastPpq) {
+				client->pushClock();
+			}
+			lastPpq = ppq;
+		}
+		// Check if transport has changed
+		bool playing = (timeInfo->flags & kVstTransportPlaying) != 0;
+		if (playing && !lastPlaying) {
+			if ((timeInfo->flags & kVstPpqPosValid) && timeInfo->ppqPos == 0.0)
+				client->pushStart();
+			client->pushContinue();
+		}
+		if (!playing && lastPlaying) {
+			client->pushStop();
+		}
+		lastPlaying = playing;
+
 		// Interleave samples
 		float input[BRIDGE_INPUTS * sampleFrames];
 		float output[BRIDGE_OUTPUTS * sampleFrames];
@@ -52,10 +79,6 @@ public:
 				outputs[c][i] = output[BRIDGE_OUTPUTS*i + c] + r;
 			}
 		}
-
-		// TEMP
-		// VstTimeInfo *timeInfo = getTimeInfo(0);
-		// debug("%f %f %f %f", timeInfo->ppqPos, timeInfo->samplePos, timeInfo->barStartPos, timeInfo->tempo);
 	}
 
 	void setParameter(VstInt32 index, float value) override {
@@ -144,7 +167,12 @@ public:
 			VstEvent *event = events->events[i];
 			if (event->type == kVstMidiType) {
 				VstMidiEvent *midiEvent = (VstMidiEvent*) event;
-				// debug("MIDI %02x %02x %02x", midiEvent->midiData[0], midiEvent->midiData[1], midiEvent->midiData[2]);
+				MidiMessage msg;
+				msg.cmd = midiEvent->midiData[0];
+				msg.data1 = midiEvent->midiData[1];
+				msg.data2 = midiEvent->midiData[2];
+				// log("%02x %02x %02x", msg.cmd, msg.data1, msg.data2);
+				client->pushMidi(msg);
 			}
 		}
 		return 0;
